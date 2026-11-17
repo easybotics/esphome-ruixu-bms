@@ -1,0 +1,212 @@
+substitutions:
+  name: seplos-bms-ble
+  device_description: "Monitor a Seplos Battery Management System via BLE"
+  external_components_source: github://syssi/esphome-seplos-bms@main
+
+esphome:
+  name: ${name}
+  friendly_name: ${name}
+  comment: ${device_description}
+  project:
+    name: "syssi.esphome-seplos-bms"
+    version: 1.6.0
+
+esp32:
+  board: wemos_d1_mini32
+  framework:
+    type: esp-idf
+
+external_components:
+  - source: ${external_components_source}
+    refresh: 0s
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  min_auth_mode: WPA2
+
+ota:
+  platform: esphome
+  on_begin:
+    then:
+      - switch.turn_off: ble_client_switch0
+      - logger.log: "BLE connection suspended for OTA update"
+
+logger:
+  level: DEBUG
+
+# If you don't use Home Assistant please remove this `api` section and uncomment the `mqtt` component!
+api:
+  reboot_timeout: 0s
+
+# mqtt:
+#   broker: !secret mqtt_host
+#   username: !secret mqtt_username
+#   password: !secret mqtt_password
+#   id: mqtt_client
+
+esp32_ble_tracker:
+
+ble_client:
+  - mac_address: !secret bms0_mac_address
+    id: client0
+
+seplos_bms_ble:
+  - ble_client_id: client0
+    id: bms0
+    update_interval: 10s
+
+binary_sensor:
+  - platform: seplos_bms_ble
+    seplos_bms_ble_id: bms0
+    charging:
+      name: "charging"
+    discharging:
+      name: "discharging"
+    limiting_current:
+      name: "limiting current"
+    online_status:
+      name: "online status"
+
+sensor:
+  - platform: seplos_bms_ble
+    seplos_bms_ble_id: bms0
+    voltage_protection_bitmask:
+      name: "voltage protection bitmask"
+    current_protection_bitmask:
+      name: "current protection bitmask"
+    temperature_protection_bitmask:
+      name: "temperature protection bitmask"
+    alarm_event1_bitmask:
+      name: "alarm event 1 bitmask"
+    alarm_event2_bitmask:
+      name: "alarm event 2 bitmask"
+    alarm_event3_bitmask:
+      name: "alarm event 3 bitmask"
+    alarm_event4_bitmask:
+      name: "alarm event 4 bitmask"
+    alarm_event5_bitmask:
+      name: "alarm event 5 bitmask"
+    alarm_event6_bitmask:
+      name: "alarm event 6 bitmask"
+    alarm_event7_bitmask:
+      name: "alarm event 7 bitmask"
+    alarm_event8_bitmask:
+      name: "alarm event 8 bitmask"
+    total_voltage:
+      name: "total voltage"
+    current:
+      name: "current"
+    power:
+      name: "power"
+    charging_power:
+      name: "charging power"
+    discharging_power:
+      name: "discharging power"
+    capacity_remaining:
+      name: "capacity remaining"
+    state_of_charge:
+      name: "state of charge"
+    nominal_capacity:
+      name: "nominal capacity"
+    charging_cycles:
+      name: "charging cycles"
+    min_cell_voltage:
+      name: "min cell voltage"
+    max_cell_voltage:
+      name: "max cell voltage"
+    min_voltage_cell:
+      name: "min voltage cell"
+    max_voltage_cell:
+      name: "max voltage cell"
+    delta_cell_voltage:
+      name: "delta cell voltage"
+    average_cell_voltage:
+      name: "average cell voltage"
+    average_cell_temperature:
+      name: "average cell temperature"
+    ambient_temperature:
+      name: "ambient temperature"
+    mosfet_temperature:
+      name: "mosfet temperature"
+    state_of_health:
+      name: "state of health"
+    port_voltage:
+      name: "port voltage"
+    battery_capacity:
+      name: "battery capacity"
+    temperature_1:
+      name: "temperature 1"
+    temperature_2:
+      name: "temperature 2"
+    temperature_3:
+      name: "temperature 3"
+    temperature_4:
+      name: "temperature 4"
+    cell_voltage_1:
+      name: "cell voltage 1"
+    cell_voltage_2:
+      name: "cell voltage 2"
+    cell_voltage_3:
+      name: "cell voltage 3"
+    cell_voltage_4:
+      name: "cell voltage 4"
+    cell_voltage_5:
+      name: "cell voltage 5"
+    cell_voltage_6:
+      name: "cell voltage 6"
+    cell_voltage_7:
+      name: "cell voltage 7"
+    cell_voltage_8:
+      name: "cell voltage 8"
+    cell_voltage_9:
+      name: "cell voltage 9"
+    cell_voltage_10:
+      name: "cell voltage 10"
+    cell_voltage_11:
+      name: "cell voltage 11"
+    cell_voltage_12:
+      name: "cell voltage 12"
+    cell_voltage_13:
+      name: "cell voltage 13"
+    cell_voltage_14:
+      name: "cell voltage 14"
+    cell_voltage_15:
+      name: "cell voltage 15"
+    cell_voltage_16:
+      name: "cell voltage 16"
+
+switch:
+  - platform: seplos_bms_ble
+    seplos_bms_ble_id: bms0
+    discharging:
+      name: "discharging"
+    charging:
+      name: "charging"
+    current_limit:
+      name: "current limit"
+    heating:
+      name: "heating"
+
+  - platform: ble_client
+    ble_client_id: client0
+    name: "enable bluetooth connection"
+    id: ble_client_switch0
+
+text_sensor:
+  - platform: seplos_bms_ble
+    seplos_bms_ble_id: bms0
+    software_version:
+      name: "software version"
+    device_model:
+      name: "device model"
+    hardware_version:
+      name: "hardware version"
+    voltage_protection:
+      name: "voltage protection"
+    current_protection:
+      name: "current protection"
+    temperature_protection:
+      name: "temperature protection"
+    alarms:
+      name: "alarms"

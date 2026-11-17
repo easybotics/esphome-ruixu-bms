@@ -4,250 +4,543 @@ on:  # yamllint disable-line rule:truthy
   push:
     branches:
       - main
-      - develop
+
   pull_request:
   schedule:
     - cron: 0 12 * * *
 
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
 env:
   FORCE_COLOR: 1
+  DEFAULT_PYTHON: "3.12"
+  PYUPGRADE_TARGET: "--py312-plus"
+
+concurrency:
+  # yamllint disable-line rule:line-length
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   yamllint:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v1
-      - name: yaml-lint
-        uses: ibiqlik/action-yamllint@v3
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - name: Run yamllint
+        uses: frenck/action-yamllint@34b4bbcaeabedcfefad6adea8c5bbc42af0e2d47  # v1.5.0
         with:
-          config_file: .yamllint
+          config: .yamllint
 
-  lint-clang-format:
-    env:
-      esphome_directory: esphome
-    runs-on: ubuntu-latest
+  bundle:
+    name: Bundle external component and ESPHome
+    runs-on: ubuntu-24.04
+    outputs:
+      repo-hash: ${{ github.sha }}
     steps:
-      - uses: actions/checkout@v2
-      - name: Set up Python
-        uses: actions/setup-python@v2
-        with:
-          python-version: '3.12'
-      - name: Cache pip modules
-        uses: actions/cache@v1
-        with:
-          path: ~/.cache/pip
-          key: esphome-pip-3.12-${{ hashFiles('setup.py') }}
-          restore-keys: |
-            esphome-pip-3.12-
+      - name: Check out this project
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
 
-      - name: 💣 Clone esphome project
-        run: git clone https://github.com/esphome/esphome.git
-      - name: 💣 Copy component into the esphome project
+      - name: Check out code from ESPHome project
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          repository: esphome/esphome
+          ref: dev
+          path: esphome
+
+      - name: Copy external component and tests into the esphome project
         run: |
+          cd esphome
           cp -r ../components/* esphome/components/
+          mkdir -p tests/components
+          cp -r ../tests/components/* tests/components/
           git config user.name "ci"
           git config user.email "ci@github.com"
           git add .
           git commit -a -m "Add external component"
-        working-directory: ${{ env.esphome_directory }}
+          ln -sf ../venv venv
 
-      - name: Add missing requirements
-        run: pip3 install setuptools wheel
-      - name: Set up python environment
-        run: VIRTUAL_ENV=false script/setup
-        working-directory: ${{ env.esphome_directory }}
+      - name: Archive prepared repository
+        uses: pyTooling/upload-artifact@a59f191f676112c140f4330026bbb6ac19b7a44d  # v7
+        with:
+          name: bundle
+          path: .
+          include-hidden-files: true
+          retention-days: 1
 
-      # Set up the pio project so that the cpp checks know how files are compiled
-      # (build flags, libraries etc)
-      - name: Set up platformio environment
-        run: pio init --ide vscode
-        working-directory: ${{ env.esphome_directory }}
+  common:
+    name: Create common environment
+    runs-on: ubuntu-24.04
+    needs: bundle
+    outputs:
+      cache-key: ${{ steps.cache-key.outputs.key }}
+    steps:
+      - name: Download prepared repository
+        uses: pyTooling/download-artifact@dc575e4e9df4b6e3580712285f1c90f579bb8712  # v8
+        with:
+          name: bundle
+          path: .
+      - name: Update index to make "git diff-index" happy
+        run: git update-index -q --really-refresh
 
+      - name: Generate cache-key
+        id: cache-key
+        run: echo key="${{ hashFiles('esphome/requirements.txt', 'esphome/requirements_test.txt') }}" >> $GITHUB_OUTPUT
+      - name: Set up Python ${{ env.DEFAULT_PYTHON }}
+        id: python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
+        with:
+          python-version: ${{ env.DEFAULT_PYTHON }}
+      - name: Restore Python virtual environment
+        id: cache-venv
+        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7  # v5.0.4
+        with:
+          path: venv
+          # yamllint disable-line rule:line-length
+          key: ${{ runner.os }}-${{ steps.python.outputs.python-version }}-venv-${{ steps.cache-key.outputs.key }}
+
+      - name: Create Python virtual environment
+        if: steps.cache-venv.outputs.cache-hit != 'true'
+        run: |
+          python -m venv venv
+          . venv/bin/activate
+          python --version
+          cd esphome
+          pip install -r requirements.txt -r requirements_test.txt
+          pip install -e .
+
+  ruff:
+    name: Check ruff
+    runs-on: ubuntu-24.04
+    needs:
+      - bundle
+      - common
+    defaults:
+      run:
+        working-directory: esphome
+    steps:
+      - name: Download prepared repository
+        uses: pyTooling/download-artifact@dc575e4e9df4b6e3580712285f1c90f579bb8712  # v8
+        with:
+          name: bundle
+          path: .
+
+      - name: Update index to make "git diff-index" happy
+        run: git update-index -q --really-refresh
+
+      - name: Restore Python
+        uses: ./.github/actions/restore-python
+        with:
+          python-version: ${{ env.DEFAULT_PYTHON }}
+          cache-key: ${{ needs.common.outputs.cache-key }}
+      - name: Run ruff check
+        run: |
+          . venv/bin/activate
+          ruff check --output-format=github esphome tests
+      - name: Run ruff format
+        if: always()
+        run: |
+          . venv/bin/activate
+          ruff format esphome tests
+      - name: Suggested changes
+        run: script/ci-suggest-changes
+        if: always()
+
+  pylint:
+    name: Check pylint
+    runs-on: ubuntu-24.04
+    needs:
+      - bundle
+      - common
+    defaults:
+      run:
+        working-directory: esphome
+    steps:
+      - name: Download prepared repository
+        uses: pyTooling/download-artifact@dc575e4e9df4b6e3580712285f1c90f579bb8712  # v8
+        with:
+          name: bundle
+          path: .
+      - name: Update index to make "git diff-index" happy
+        run: git update-index -q --really-refresh
+
+      - name: Restore Python
+        uses: ./.github/actions/restore-python
+        with:
+          python-version: ${{ env.DEFAULT_PYTHON }}
+          cache-key: ${{ needs.common.outputs.cache-key }}
+      - name: Register matcher
+        run: echo "::add-matcher::.github/workflows/matchers/pylint.json"
+      - name: Run pylint
+        run: |
+          . venv/bin/activate
+          pylint -f parseable --persistent=n esphome
+      - name: Suggested changes
+        run: script/ci-suggest-changes
+        if: always()
+
+  pyupgrade:
+    name: Check pyupgrade
+    runs-on: ubuntu-24.04
+    needs:
+      - bundle
+      - common
+    defaults:
+      run:
+        working-directory: esphome
+    steps:
+      - name: Download prepared repository
+        uses: pyTooling/download-artifact@dc575e4e9df4b6e3580712285f1c90f579bb8712  # v8
+        with:
+          name: bundle
+          path: .
+      - name: Update index to make "git diff-index" happy
+        run: git update-index -q --really-refresh
+
+      - name: Restore Python
+        uses: ./.github/actions/restore-python
+        with:
+          python-version: ${{ env.DEFAULT_PYTHON }}
+          cache-key: ${{ needs.common.outputs.cache-key }}
+      - name: Run pyupgrade
+        run: |
+          . venv/bin/activate
+          pyupgrade ${{ env.PYUPGRADE_TARGET }} `find esphome -name "*.py" -type f`
+      - name: Suggested changes
+        run: script/ci-suggest-changes
+        if: always()
+
+  ci-custom:
+    name: Run script/ci-custom
+    runs-on: ubuntu-24.04
+    needs:
+      - bundle
+      - common
+    defaults:
+      run:
+        working-directory: esphome
+    steps:
+      - name: Download prepared repository
+        uses: pyTooling/download-artifact@dc575e4e9df4b6e3580712285f1c90f579bb8712  # v8
+        with:
+          name: bundle
+          path: .
+      - name: Update index to make "git diff-index" happy
+        run: git update-index -q --really-refresh
+
+      - name: Restore Python
+        uses: ./.github/actions/restore-python
+        with:
+          python-version: ${{ env.DEFAULT_PYTHON }}
+          cache-key: ${{ needs.common.outputs.cache-key }}
+      - name: Register matcher
+        run: echo "::add-matcher::.github/workflows/matchers/ci-custom.json"
+
+      - name: Do not suggest to move consts
+        run: |
+          sed -i 's#if len(uses) < 3:#if len(uses) < 8:#' script/ci-custom.py
+          sed -i 's#if len(files) >= 2:#if len(files) >= 99:#' script/ci-custom.py
+          git update-index --assume-unchanged script/ci-custom.py
+
+      - name: Run script/ci-custom
+        run: |
+          . ../venv/bin/activate
+          script/ci-custom.py
+
+  clang-format:
+    name: Check clang-format
+    runs-on: ubuntu-24.04
+    needs:
+      - bundle
+      - common
+    defaults:
+      run:
+        working-directory: esphome
+    steps:
+      - name: Download prepared repository
+        uses: pyTooling/download-artifact@dc575e4e9df4b6e3580712285f1c90f579bb8712  # v8
+        with:
+          name: bundle
+          path: .
+      - name: Update index to make "git diff-index" happy
+        run: git update-index -q --really-refresh
+
+      - name: Restore Python
+        uses: ./.github/actions/restore-python
+        with:
+          python-version: ${{ env.DEFAULT_PYTHON }}
+          cache-key: ${{ needs.common.outputs.cache-key }}
+      - name: Install clang-format
+        run: |
+          . venv/bin/activate
+          pip install clang-format -c requirements_dev.txt
       - name: Run clang-format
-        run: script/clang-format -i
-        working-directory: ${{ env.esphome_directory }}
-
-      - name: Suggest changes
-        run: script/ci-suggest-changes
-        working-directory: ${{ env.esphome_directory }}
-
-  lint-clang-tidy:
-    env:
-      esphome_directory: esphome
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v2
-      - name: Set up Python
-        uses: actions/setup-python@v2
-        with:
-          python-version: '3.12'
-      - name: Cache pip modules
-        uses: actions/cache@v1
-        with:
-          path: ~/.cache/pip
-          key: esphome-pip-3.12-${{ hashFiles('setup.py') }}
-          restore-keys: |
-            esphome-pip-3.12-
-
-      - name: 💣Clone esphome project
-        run: git clone https://github.com/esphome/esphome.git
-      - name: 💣Copy component into the esphome project
         run: |
-          cp -r ../components/* esphome/components/
-          git config user.name "ci"
-          git config user.email "ci@github.com"
-          git add .
-          git commit -a -m "Add external component"
-        working-directory: ${{ env.esphome_directory }}
+          . venv/bin/activate
+          # Only format the sources of this project, not the ESPHome core tree
+          shopt -s nullglob
+          paths=()
+          for dir in ../components/*/; do
+            paths+=("esphome/components/$(basename "$dir")")
+          done
+          for dir in ../tests/components/*/; do
+            paths+=("tests/components/$(basename "$dir")")
+          done
+          if [ ${#paths[@]} -eq 0 ]; then
+            echo "No component directories found"
+            exit 0
+          fi
+          git ls-files -z -- "${paths[@]}" \
+            | grep -zE '\.(c|cpp|h|hpp|tcc)$' \
+            | xargs -0 -r clang-format -i
+      - name: Suggested changes
+        run: script/ci-suggest-changes
+        if: always()
 
-      - name: Add missing requirements
-        run: pip3 install setuptools wheel
-      - name: Set up python environment
-        run: VIRTUAL_ENV=false script/setup
-        working-directory: ${{ env.esphome_directory }}
+  clang-tidy:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-24.04
+    needs:
+      - bundle
+      - common
+    defaults:
+      run:
+        working-directory: esphome
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        include:
+          - id: clang-tidy
+            name: Run script/clang-tidy for ESP8266
+            options: --environment esp8266-arduino-tidy --grep USE_ESP8266
+            pio_cache_key: tidyesp8266
+          - id: clang-tidy
+            name: Run script/clang-tidy for ESP32 Arduino
+            options: --environment esp32-arduino-tidy
+            pio_cache_key: tidyesp32
+          - id: clang-tidy
+            name: Run script/clang-tidy for ESP32 IDF
+            options: --environment esp32-idf-tidy --grep USE_ESP_IDF
+            pio_cache_key: tidyesp32-idf
 
-      # Set up the pio project so that the cpp checks know how files are compiled
-      # (build flags, libraries etc)
-      - name: Set up platformio environment
-        run: pio init --ide vscode
-        working-directory: ${{ env.esphome_directory }}
+    steps:
+      - name: Download prepared repository
+        uses: pyTooling/download-artifact@dc575e4e9df4b6e3580712285f1c90f579bb8712  # v8
+        with:
+          name: bundle
+          path: .
+      - name: Update index to make "git diff-index" happy
+        run: git update-index -q --really-refresh
+
+      - name: Restore Python
+        uses: ./.github/actions/restore-python
+        with:
+          python-version: ${{ env.DEFAULT_PYTHON }}
+          cache-key: ${{ needs.common.outputs.cache-key }}
+
+      - name: Cache platformio
+        if: github.ref == 'refs/heads/main'
+        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7  # v5.0.4
+        with:
+          path: ~/.platformio
+          key: platformio-${{ matrix.pio_cache_key }}-${{ hashFiles('esphome/platformio.ini') }}
+          restore-keys: platformio-${{ matrix.pio_cache_key }}-
+
+      - name: Cache platformio
+        if: github.ref != 'refs/heads/main'
+        uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7  # v5.0.4
+        with:
+          path: ~/.platformio
+          key: platformio-${{ matrix.pio_cache_key }}-${{ hashFiles('esphome/platformio.ini') }}
+          restore-keys: platformio-${{ matrix.pio_cache_key }}-
 
       - name: Register problem matchers
         run: |
-          echo "::add-matcher::.github/workflows/matchers/clang-tidy.json"
           echo "::add-matcher::.github/workflows/matchers/gcc.json"
-      - name: Run lint-cpp
-        run: script/lint-cpp -c
-        working-directory: ${{ env.esphome_directory }}
-      - name: Suggest changes
+          echo "::add-matcher::.github/workflows/matchers/clang-tidy.json"
+
+      - name: Install clang-tidy
+        run: |
+          . venv/bin/activate
+          pip install clang-tidy -c requirements_dev.txt
+
+      - name: Run clang-tidy
+        run: |
+          . venv/bin/activate
+          script/clang-tidy --all-headers --fix ${{ matrix.options }} $(ls ../components/)
+        env:
+          # Also cache libdeps, store them in a ~/.platformio subfolder
+          PLATFORMIO_LIBDEPS_DIR: ~/.platformio/libdeps
+
+      - name: Suggested changes
         run: script/ci-suggest-changes
-        working-directory: ${{ env.esphome_directory }}
+        # yamllint disable-line rule:line-length
+        if: always()
 
-  lint-python:
-    env:
-      esphome_directory: esphome
-    # Don't use the esphome-lint docker image because it may contain outdated requirements.
-    # This way, all dependencies are cached via the cache action.
-    runs-on: ubuntu-latest
+  pytest:
+    name: Run pytest
+    runs-on: ubuntu-24.04
+    needs:
+      - bundle
+      - common
     steps:
-      - uses: actions/checkout@v2
-      - name: Set up Python
-        uses: actions/setup-python@v2
+      - name: Download prepared repository
+        uses: pyTooling/download-artifact@dc575e4e9df4b6e3580712285f1c90f579bb8712  # v8
         with:
-          python-version: '3.12'
-      - name: Cache pip modules
-        uses: actions/cache@v1
+          name: bundle
+          path: .
+
+      - name: Restore Python
+        uses: ./.github/actions/restore-python
         with:
-          path: ~/.cache/pip
-          key: esphome-pip-3.12-${{ hashFiles('setup.py') }}
-          restore-keys: |
-            esphome-pip-3.12-
+          python-version: ${{ env.DEFAULT_PYTHON }}
+          cache-key: ${{ needs.common.outputs.cache-key }}
 
-      - name: 💣Clone esphome project
-        run: git clone https://github.com/esphome/esphome.git
-      - name: 💣Copy component into the esphome project
+      - name: Register matcher
+        run: echo "::add-matcher::.github/workflows/matchers/pytest.json"
+      - name: Run pytest
         run: |
-          cp -r ../components/* esphome/components/
-          git config user.name "ci"
-          git config user.email "ci@github.com"
-          git add .
-          git commit -a -m "Add external component"
-        working-directory: ${{ env.esphome_directory }}
-
-      - name: Add missing requirements
-        run: pip3 install setuptools wheel
-      - name: Set up python environment
-        run: VIRTUAL_ENV=false script/setup
-        working-directory: ${{ env.esphome_directory }}
-
-      - name: Register problem matchers
-        run: |
-          echo "::add-matcher::.github/workflows/matchers/ci-custom.json"
-          echo "::add-matcher::.github/workflows/matchers/lint-python.json"
-          echo "::add-matcher::.github/workflows/matchers/python.json"
-
-      - name: Lint Custom
-        run: script/ci-custom.py -c
-        working-directory: ${{ env.esphome_directory }}
-      - name: Lint Python
-        run: script/lint-python -c
-        working-directory: ${{ env.esphome_directory }}
+          . venv/bin/activate
+          pytest -v --tb=native tests/
 
   esphome-config:
-    runs-on: ubuntu-latest
+    name: Validate example configurations
+    runs-on: ubuntu-24.04
+    needs:
+      - bundle
+      - common
     steps:
-      - name: ⤵️ Check out configuration from GitHub
-        uses: actions/checkout@v2
-      - name: Setup Python 3.12
-        uses: actions/setup-python@v1
+      - name: Download prepared repository
+        uses: pyTooling/download-artifact@dc575e4e9df4b6e3580712285f1c90f579bb8712  # v8
         with:
-          python-version: 3.12
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip setuptools wheel
-          pip install esphome
-          pip list
-          esphome version
-      - name: Write secrets.yaml
-        shell: bash
-        run: 'echo -e "wifi_ssid: ssid\nwifi_password: password\nmqtt_host: host\nmqtt_username: username\nmqtt_password: password" > secrets.yaml'
-      - name: Write tests/secrets.yaml
-        shell: bash
-        run: 'echo -e "wifi_ssid: ssid\nwifi_password: password\nmqtt_host: host\nmqtt_username: username\nmqtt_password: password" > tests/secrets.yaml'
+          name: bundle
+          path: .
+
+      - name: Restore Python
+        uses: ./.github/actions/restore-python
+        with:
+          python-version: ${{ env.DEFAULT_PYTHON }}
+          cache-key: ${{ needs.common.outputs.cache-key }}
+
+      - name: Register matcher
+        run: echo "::add-matcher::.github/workflows/matchers/esphome-config.json"
+
       - name: Validate example configurations
         run: |
+          . venv/bin/activate
+          echo -e "wifi_ssid: ssid\nwifi_password: password\nmqtt_host: host\nmqtt_username: username\nmqtt_password: password\nbms0_mac_address: 70:3e:97:07:c0:3e" > secrets.yaml
           for YAML in esp*.yaml; do
-            esphome -s external_components_source components config $YAML >/dev/null
+            esphome -s external_components_source components config $YAML
           done
+
       - name: Validate test configurations
         run: |
+          . venv/bin/activate
+          echo -e "wifi_ssid: ssid\nwifi_password: password\nmqtt_host: host\nmqtt_username: username\nmqtt_password: password\nbms0_mac_address: 70:3e:97:07:c0:3e" > tests/secrets.yaml
           for YAML in tests/esp*.yaml; do
-            esphome -s external_components_source ../components config $YAML >/dev/null
+            esphome -s external_components_source ../components config $YAML
           done
 
   esphome-compile:
-    runs-on: ubuntu-latest
-    needs: [esphome-config]
+    name: Build example configurations
+    runs-on: ubuntu-24.04
+    needs:
+      - bundle
+      - common
     steps:
-      - name: ⤵️ Check out configuration from GitHub
-        uses: actions/checkout@v2
-      - name: Cache .esphome
-        uses: actions/cache@v2
+      - name: Download prepared repository
+        uses: pyTooling/download-artifact@dc575e4e9df4b6e3580712285f1c90f579bb8712  # v8
         with:
-          path: .esphome
-          key: esphome-compile-esphome-${{ hashFiles('*.yaml') }}
-          restore-keys: esphome-compile-esphome-
-      - name: Cache .pioenvs
-        uses: actions/cache@v2
+          name: bundle
+          path: .
+
+      - name: Restore Python
+        uses: ./.github/actions/restore-python
         with:
-          path: .pioenvs
-          key: esphome-compile-pioenvs-${{ hashFiles('*.yaml') }}
-          restore-keys: esphome-compile-pioenvs-
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v1
+          python-version: ${{ env.DEFAULT_PYTHON }}
+          cache-key: ${{ needs.common.outputs.cache-key }}
+
+      - name: Cache platformio
+        if: github.ref == 'refs/heads/main'
+        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7  # v5.0.4
         with:
-          python-version: 3.12
-      - name: Install dependencies
+          path: ~/.platformio
+          key: platformio-compile-${{ hashFiles('esphome/platformio.ini') }}
+          restore-keys: platformio-compile-
+
+      - name: Cache platformio
+        if: github.ref != 'refs/heads/main'
+        uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7  # v5.0.4
+        with:
+          path: ~/.platformio
+          key: platformio-compile-${{ hashFiles('esphome/platformio.ini') }}
+          restore-keys: platformio-compile-
+
+      - name: Compile example configurations
         run: |
-          python -m pip install --upgrade pip setuptools wheel
-          pip install esphome
-          pip list
-          esphome version
-      - name: Register problem matchers
+          . venv/bin/activate
+          echo -e "wifi_ssid: ssid\nwifi_password: password\nmqtt_host: host\nmqtt_username: username\nmqtt_password: password\nbms0_mac_address: 70:3e:97:07:c0:3e" > secrets.yaml
+          for YAML in esp*faker.yaml; do
+            esphome -s external_components_source components compile $YAML
+          done
+        env:
+          PLATFORMIO_LIBDEPS_DIR: ~/.platformio/libdeps
+
+      - name: Compile test configurations
         run: |
-          echo "::add-matcher::.github/workflows/matchers/gcc.json"
-          echo "::add-matcher::.github/workflows/matchers/python.json"
-      - name: Write secrets.yaml
-        shell: bash
-        run: 'echo -e "wifi_ssid: ssid\nwifi_password: password\nmqtt_host: host\nmqtt_username: username\nmqtt_password: password" > secrets.yaml'
-      - name: Compile esp8266 example configurations
+          . venv/bin/activate
+          echo -e "wifi_ssid: ssid\nwifi_password: password\nmqtt_host: host\nmqtt_username: username\nmqtt_password: password\nbms0_mac_address: 70:3e:97:07:c0:3e" > tests/secrets.yaml
+          esphome -s external_components_source ../components compile tests/esp32c6-compatibility-test.yaml
+        env:
+          PLATFORMIO_LIBDEPS_DIR: ~/.platformio/libdeps
+
+  cpp-unit-tests:
+    name: Run C++ unit tests
+    runs-on: ubuntu-24.04
+    needs:
+      - bundle
+      - common
+    defaults:
+      run:
+        working-directory: esphome
+    steps:
+      - name: Download prepared repository
+        uses: pyTooling/download-artifact@dc575e4e9df4b6e3580712285f1c90f579bb8712  # v8
+        with:
+          name: bundle
+          path: .
+      - name: Update index to make "git diff-index" happy
+        run: git update-index -q --really-refresh
+
+      - name: Restore Python
+        uses: ./.github/actions/restore-python
+        with:
+          python-version: ${{ env.DEFAULT_PYTHON }}
+          cache-key: ${{ needs.common.outputs.cache-key }}
+
+      - name: Cache platformio
+        if: github.ref == 'refs/heads/main'
+        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7  # v5.0.4
+        with:
+          path: ~/.platformio
+          key: platformio-cpp-unit-tests-${{ hashFiles('esphome/platformio.ini') }}
+          restore-keys: platformio-cpp-unit-tests-
+
+      - name: Cache platformio
+        if: github.ref != 'refs/heads/main'
+        uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7  # v5.0.4
+        with:
+          path: ~/.platformio
+          key: platformio-cpp-unit-tests-${{ hashFiles('esphome/platformio.ini') }}
+          restore-keys: platformio-cpp-unit-tests-
+
+      - name: Run C++ unit tests
         run: |
-          esphome -s external_components_source components compile esp8266-example-faker.yaml
-          esphome -s external_components_source components compile esp8266-boqiang-example-faker.yaml
-          esphome -s external_components_source components compile esp8266-example-multiple-battery-banks.yaml
-          esphome -s external_components_source components compile esp8266-seplos-v3-example.yaml
-      - name: Compile esp32 example configurations
-        run: |
-          esphome -s external_components_source components compile esp32-example-faker.yaml
-          esphome -s external_components_source components compile esp32-boqiang-example-faker.yaml
-          esphome -s external_components_source components compile esp32-seplos-v3-example.yaml
+          . venv/bin/activate
+          script/cpp_unit_test.py seplos_bms seplos_bms_ble seplos_bms_v3_ble seplos_bms_v3_ble_pack seplos_modbus
+        env:
+          PLATFORMIO_LIBDEPS_DIR: ~/.platformio/libdeps
+          ASAN_OPTIONS: detect_leaks=0

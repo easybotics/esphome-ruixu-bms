@@ -1,0 +1,352 @@
+substitutions:
+  name: seplos-bms-v3-ble
+  device_description: "Monitor a Seplos Battery Management System V3 via BLE"
+  external_components_source: github://syssi/esphome-seplos-bms@main
+
+esphome:
+  name: ${name}
+  friendly_name: ${name}
+  comment: ${device_description}
+  project:
+    name: "syssi.esphome-seplos-bms"
+    version: 1.6.0
+
+esp32:
+  board: wemos_d1_mini32
+  framework:
+    type: esp-idf
+
+external_components:
+  - source: ${external_components_source}
+    refresh: 0s
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  min_auth_mode: WPA2
+
+ota:
+  platform: esphome
+  on_begin:
+    then:
+      - switch.turn_off: ble_client_switch0
+      - logger.log: "BLE connection suspended for OTA update"
+
+logger:
+  level: INFO
+
+# If you don't use Home Assistant please remove this `api` section and uncomment the `mqtt` component!
+api:
+  reboot_timeout: 0s
+
+# mqtt:
+#   broker: !secret mqtt_host
+#   username: !secret mqtt_username
+#   password: !secret mqtt_password
+#   id: mqtt_client
+
+esp32_ble_tracker:
+
+ble_client:
+  - mac_address: !secret bms0_mac_address
+    id: client0
+
+seplos_bms_v3_ble:
+  - ble_client_id: client0
+    id: bms0
+    update_interval: 10s
+
+seplos_bms_v3_ble_pack:
+  - seplos_bms_v3_ble_id: bms0
+    address: 0x01
+    id: pack0
+  - seplos_bms_v3_ble_id: bms0
+    address: 0x02
+    id: pack1
+
+binary_sensor:
+  - platform: seplos_bms_v3_ble
+    seplos_bms_v3_ble_id: bms0
+    charging:
+      name: "charging"
+    discharging:
+      name: "discharging"
+    online_status:
+      name: "online status"
+    voltage_protection:
+      name: "voltage protection"
+    temperature_protection:
+      name: "temperature protection"
+    current_protection:
+      name: "current protection"
+    system_fault:
+      name: "system fault"
+    heating:
+      name: "heating"
+
+sensor:
+  - platform: seplos_bms_v3_ble
+    seplos_bms_v3_ble_id: bms0
+    total_voltage:
+      name: "total voltage"
+    current:
+      name: "current"
+    power:
+      name: "power"
+    charging_power:
+      name: "charging power"
+    discharging_power:
+      name: "discharging power"
+    state_of_charge:
+      name: "state of charge"
+    charging_cycles:
+      name: "charging cycles"
+    average_cell_temperature:
+      name: "average cell temperature"
+    pack_count:
+      name: "pack count"
+    problem_code:
+      name: "problem code"
+    cycle_charge:
+      name: "cycle charge"
+    cycle_capacity:
+      name: "cycle capacity"
+    runtime:
+      name: "runtime"
+    min_cell_voltage:
+      name: "min cell voltage"
+    max_cell_voltage:
+      name: "max cell voltage"
+    min_voltage_cell:
+      name: "min voltage cell"
+    max_voltage_cell:
+      name: "max voltage cell"
+    delta_voltage:
+      name: "delta voltage"
+    state_of_health:
+      name: "state of health"
+    capacity_remaining:
+      name: "capacity remaining"
+    total_capacity:
+      name: "total capacity"
+    rated_capacity:
+      name: "rated capacity"
+    min_cell_temperature:
+      name: "min cell temperature"
+    max_cell_temperature:
+      name: "max cell temperature"
+    min_temperature_cell:
+      name: "min temperature cell"
+    max_temperature_cell:
+      name: "max temperature cell"
+    min_pack_voltage:
+      name: "min pack voltage"
+    max_pack_voltage:
+      name: "max pack voltage"
+    min_pack_voltage_id:
+      name: "min pack voltage id"
+    max_pack_voltage_id:
+      name: "max pack voltage id"
+    system_state_code:
+      name: "system state code"
+    voltage_event_code:
+      name: "voltage event code"
+    temperature_event_code:
+      name: "temperature event code"
+    current_event_code:
+      name: "current event code"
+    max_discharge_current:
+      name: "max discharge current"
+    max_charge_current:
+      name: "max charge current"
+    inverter_protocol:
+      name: "inverter protocol"
+    inverter_baud_rate:
+      name: "inverter baud rate"
+    inverter_protocol_pre_switch:
+      name: "inverter protocol pre switch"
+    temperature_sensor_count:
+      name: "temperature sensor count"
+    cell_count:
+      name: "cell count"
+    pack_overvoltage_recovery_voltage:
+      name: "pack overvoltage recovery voltage"
+    pack_overvoltage_protection_voltage:
+      name: "pack overvoltage protection voltage"
+    pack_undervoltage_recovery_voltage:
+      name: "pack undervoltage recovery voltage"
+    pack_undervoltage_protection_voltage:
+      name: "pack undervoltage protection voltage"
+    cell_overvoltage_recovery_voltage:
+      name: "cell overvoltage recovery voltage"
+    cell_overvoltage_protection_voltage:
+      name: "cell overvoltage protection voltage"
+    cell_undervoltage_recovery_voltage:
+      name: "cell undervoltage recovery voltage"
+    cell_undervoltage_protection_voltage:
+      name: "cell undervoltage protection voltage"
+    cell_voltage_difference_protection:
+      name: "cell voltage difference protection"
+    charge_overcurrent_protection:
+      name: "charge overcurrent protection"
+    discharge_overcurrent_protection:
+      name: "discharge overcurrent protection"
+    charge_overtemperature_protection:
+      name: "charge overtemperature protection"
+    charge_low_temperature_alarm:
+      name: "charge low temperature alarm"
+    discharge_overtemperature_protection:
+      name: "discharge overtemperature protection"
+    environment_undertemperature_protection:
+      name: "environment undertemperature protection"
+    mosfet_overtemperature_protection:
+      name: "mosfet overtemperature protection"
+    balancing_start_voltage:
+      name: "balancing start voltage"
+    balancing_start_difference:
+      name: "balancing start difference"
+    low_state_of_charge_alarm:
+      name: "low state of charge alarm"
+    inverter_charge_current_limit:
+      name: "inverter charge current limit"
+    inverter_discharge_current_limit:
+      name: "inverter discharge current limit"
+
+  # Pack-specific sensors
+  - platform: seplos_bms_v3_ble_pack
+    seplos_bms_v3_ble_pack_id: pack0
+    pack_voltage:
+      name: "pack 0 voltage"
+    pack_current:
+      name: "pack 0 current"
+    pack_battery_level:
+      name: "pack 0 battery level"
+    pack_cycle:
+      name: "pack 0 cycles"
+    pack_cell_voltage_1:
+      name: "pack 0 cell 1 voltage"
+    pack_cell_voltage_2:
+      name: "pack 0 cell 2 voltage"
+    pack_cell_voltage_3:
+      name: "pack 0 cell 3 voltage"
+    pack_cell_voltage_4:
+      name: "pack 0 cell 4 voltage"
+    pack_cell_voltage_5:
+      name: "pack 0 cell 5 voltage"
+    pack_cell_voltage_6:
+      name: "pack 0 cell 6 voltage"
+    pack_cell_voltage_7:
+      name: "pack 0 cell 7 voltage"
+    pack_cell_voltage_8:
+      name: "pack 0 cell 8 voltage"
+    pack_cell_voltage_9:
+      name: "pack 0 cell 9 voltage"
+    pack_cell_voltage_10:
+      name: "pack 0 cell 10 voltage"
+    pack_cell_voltage_11:
+      name: "pack 0 cell 11 voltage"
+    pack_cell_voltage_12:
+      name: "pack 0 cell 12 voltage"
+    pack_cell_voltage_13:
+      name: "pack 0 cell 13 voltage"
+    pack_cell_voltage_14:
+      name: "pack 0 cell 14 voltage"
+    pack_cell_voltage_15:
+      name: "pack 0 cell 15 voltage"
+    pack_cell_voltage_16:
+      name: "pack 0 cell 16 voltage"
+    pack_temperature_1:
+      name: "pack 0 temperature 1"
+    pack_temperature_2:
+      name: "pack 0 temperature 2"
+    pack_temperature_3:
+      name: "pack 0 temperature 3"
+    pack_temperature_4:
+      name: "pack 0 temperature 4"
+    ambient_temperature:
+      name: "pack 0 ambient temperature"
+    mosfet_temperature:
+      name: "pack 0 mosfet temperature"
+
+  - platform: seplos_bms_v3_ble_pack
+    seplos_bms_v3_ble_pack_id: pack1
+    pack_voltage:
+      name: "pack 1 voltage"
+    pack_current:
+      name: "pack 1 current"
+    pack_battery_level:
+      name: "pack 1 battery level"
+    pack_cycle:
+      name: "pack 1 cycles"
+    pack_cell_voltage_1:
+      name: "pack 1 cell 1 voltage"
+    pack_cell_voltage_2:
+      name: "pack 1 cell 2 voltage"
+    pack_cell_voltage_3:
+      name: "pack 1 cell 3 voltage"
+    pack_cell_voltage_4:
+      name: "pack 1 cell 4 voltage"
+    pack_cell_voltage_5:
+      name: "pack 1 cell 5 voltage"
+    pack_cell_voltage_6:
+      name: "pack 1 cell 6 voltage"
+    pack_cell_voltage_7:
+      name: "pack 1 cell 7 voltage"
+    pack_cell_voltage_8:
+      name: "pack 1 cell 8 voltage"
+    pack_cell_voltage_9:
+      name: "pack 1 cell 9 voltage"
+    pack_cell_voltage_10:
+      name: "pack 1 cell 10 voltage"
+    pack_cell_voltage_11:
+      name: "pack 1 cell 11 voltage"
+    pack_cell_voltage_12:
+      name: "pack 1 cell 12 voltage"
+    pack_cell_voltage_13:
+      name: "pack 1 cell 13 voltage"
+    pack_cell_voltage_14:
+      name: "pack 1 cell 14 voltage"
+    pack_cell_voltage_15:
+      name: "pack 1 cell 15 voltage"
+    pack_cell_voltage_16:
+      name: "pack 1 cell 16 voltage"
+    pack_temperature_1:
+      name: "pack 1 temperature 1"
+    pack_temperature_2:
+      name: "pack 1 temperature 2"
+    pack_temperature_3:
+      name: "pack 1 temperature 3"
+    pack_temperature_4:
+      name: "pack 1 temperature 4"
+    ambient_temperature:
+      name: "pack 1 ambient temperature"
+    mosfet_temperature:
+      name: "pack 1 mosfet temperature"
+
+switch:
+  - platform: ble_client
+    ble_client_id: client0
+    name: "enable bluetooth connection"
+    id: ble_client_switch0
+
+text_sensor:
+  - platform: seplos_bms_v3_ble
+    seplos_bms_v3_ble_id: bms0
+    problem:
+      name: "problem"
+    factory_name:
+      name: "factory name"
+    device_name:
+      name: "device name"
+    firmware_version:
+      name: "firmware version"
+    bms_serial_number:
+      name: "BMS serial number"
+    pack_serial_number:
+      name: "pack serial number"
+    inverter_name:
+      name: "inverter name"
+    inverter_protocol_name:
+      name: "inverter protocol name"
+    inverter_protocol_version:
+      name: "inverter protocol version"

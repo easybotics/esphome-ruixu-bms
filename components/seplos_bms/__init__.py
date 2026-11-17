@@ -5,6 +5,7 @@ from esphome.const import CONF_ID
 
 AUTO_LOAD = ["seplos_modbus", "binary_sensor", "sensor", "text_sensor"]
 CODEOWNERS = ["@syssi"]
+DOMAIN = "seplos_bms"
 MULTI_CONF = True
 
 CONF_SEPLOS_BMS_ID = "seplos_bms_id"
@@ -18,7 +19,14 @@ SeplosBms = seplos_bms_ns.class_(
     "SeplosBms", cg.PollingComponent, seplos_modbus.SeplosModbusDevice
 )
 
-CONFIG_SCHEMA = (
+SEPLOS_BMS_COMPONENT_SCHEMA = cv.Schema(
+    {
+        cv.GenerateID(CONF_SEPLOS_BMS_ID): cv.use_id(SeplosBms),
+    }
+)
+
+CONFIG_SCHEMA = cv.All(
+    cv.require_esphome_version(2026, 1, 0),
     cv.Schema(
         {
             cv.GenerateID(): cv.declare_id(SeplosBms),
@@ -32,7 +40,7 @@ CONFIG_SCHEMA = (
         seplos_modbus.seplos_modbus_device_schema(
             DEFAULT_PROTOCOL_VERSION, DEFAULT_ADDRESS
         )
-    )
+    ),
 )
 
 

@@ -1,14 +1,9 @@
 import esphome.codegen as cg
 from esphome.components import text_sensor
 import esphome.config_validation as cv
-from esphome.const import (
-    CONF_ENTITY_CATEGORY,
-    CONF_ICON,
-    CONF_ID,
-    ENTITY_CATEGORY_DIAGNOSTIC,
-)
+from esphome.const import ENTITY_CATEGORY_DIAGNOSTIC
 
-from . import CONF_SEPLOS_BMS_ID, SeplosBms
+from . import CONF_SEPLOS_BMS_ID, SEPLOS_BMS_COMPONENT_SCHEMA
 
 DEPENDENCIES = ["seplos_bms"]
 
@@ -22,17 +17,11 @@ TEXT_SENSORS = [
     CONF_ERRORS,
 ]
 
-CONFIG_SCHEMA = cv.Schema(
+CONFIG_SCHEMA = SEPLOS_BMS_COMPONENT_SCHEMA.extend(
     {
-        cv.GenerateID(CONF_SEPLOS_BMS_ID): cv.use_id(SeplosBms),
-        cv.Optional(CONF_ERRORS): text_sensor.TEXT_SENSOR_SCHEMA.extend(
-            {
-                cv.GenerateID(): cv.declare_id(text_sensor.TextSensor),
-                cv.Optional(CONF_ICON, default=ICON_ERRORS): cv.icon,
-                cv.Optional(
-                    CONF_ENTITY_CATEGORY, default=ENTITY_CATEGORY_DIAGNOSTIC
-                ): cv.entity_category,
-            }
+        cv.Optional(CONF_ERRORS): text_sensor.text_sensor_schema(
+            icon=ICON_ERRORS,
+            entity_category=ENTITY_CATEGORY_DIAGNOSTIC,
         ),
     }
 )
@@ -43,6 +32,5 @@ async def to_code(config):
     for key in TEXT_SENSORS:
         if key in config:
             conf = config[key]
-            sens = cg.new_Pvariable(conf[CONF_ID])
-            await text_sensor.register_text_sensor(sens, conf)
+            sens = await text_sensor.new_text_sensor(conf)
             cg.add(getattr(hub, f"set_{key}_text_sensor")(sens))

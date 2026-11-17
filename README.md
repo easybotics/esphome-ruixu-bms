@@ -184,7 +184,7 @@ Cell voltage Max / Min getting closer over multiple cycles :) showing the balanc
 
 # esphome-seplos-bms
 
-ESPHome component to monitor Seplos BMS via UART or RS485
+ESPHome component to monitor a Seplos BMS via UART, RS485 or BLE
 
 ## Supported devices
 
@@ -248,7 +248,8 @@ Please be aware of the different RJ45 pinout colors ([T-568A vs. T-568B](images/
 
 ## Requirements
 
-* [ESPHome 2024.6.0 or higher](https://github.com/esphome/esphome/releases).
+* [ESPHome 2026.1.0 or higher](https://github.com/esphome/esphome/releases).
+* ESPHome 2026.10.0 or higher for the Seplos V3 RS485 examples using `modbus_controller` (`allow_broadcast_read`)
 * Generic ESP32 or ESP8266 board
 
 ## Installation
@@ -277,6 +278,9 @@ wifi_password: MY_WIFI_PASSWORD
 mqtt_host: MY_MQTT_HOST
 mqtt_username: MY_MQTT_USERNAME
 mqtt_password: MY_MQTT_PASSWORD
+
+# Required for the BLE examples only. Use the MAC address of your BMS.
+bms0_mac_address: MY_BMS_MAC_ADDRESS
 EOF
 
 # Validate the configuration, create a binary, upload it, and start logs

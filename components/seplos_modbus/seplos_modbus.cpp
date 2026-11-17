@@ -2,10 +2,16 @@
 #include "esphome/core/log.h"
 #include "esphome/core/helpers.h"
 
-namespace esphome {
-namespace seplos_modbus {
+// Fallback for ESPHome < 2026.10.0
+#ifndef ESPHOME_LOG_TAG
+#define ESPHOME_LOG_TAG(name, tag) static const char *const name = tag
+#endif
 
-static const char *const TAG = "seplos_modbus";
+namespace esphome::seplos_modbus {
+
+ESPHOME_LOG_TAG(TAG, "seplos_modbus");
+
+static constexpr size_t MAX_HEX_DUMP_BYTES = 100;
 
 static const uint16_t MAX_RESPONSE_SIZE = 340;
 
@@ -18,8 +24,8 @@ void SeplosModbus::loop() {
   const uint32_t now = millis();
 
   if (now - this->last_seplos_modbus_byte_ > this->rx_timeout_) {
-    ESP_LOGVV(TAG, "Buffer cleared due to timeout: %s",
-              format_hex_pretty(&this->rx_buffer_.front(), this->rx_buffer_.size()).c_str());
+    char hex_buf[format_hex_pretty_size(MAX_HEX_DUMP_BYTES)];
+    ESP_LOGVV(TAG, "Buffer cleared due to timeout: %s", format_hex_pretty_to(hex_buf, this->rx_buffer_, '.'));
     this->rx_buffer_.clear();
     this->last_seplos_modbus_byte_ = now;
   }
@@ -30,8 +36,8 @@ void SeplosModbus::loop() {
     if (this->parse_seplos_modbus_byte_(byte)) {
       this->last_seplos_modbus_byte_ = now;
     } else {
-      ESP_LOGVV(TAG, "Buffer cleared due to reset: %s",
-                format_hex_pretty(&this->rx_buffer_.front(), this->rx_buffer_.size()).c_str());
+      char hex_buf[format_hex_pretty_size(MAX_HEX_DUMP_BYTES)];
+      ESP_LOGVV(TAG, "Buffer cleared due to reset: %s", format_hex_pretty_to(hex_buf, this->rx_buffer_, '.'));
       this->rx_buffer_.clear();
     }
   }
@@ -181,5 +187,4 @@ void SeplosModbus::send(uint8_t protocol_version, uint8_t address, uint8_t funct
     this->flow_control_pin_->digital_write(false);
 }
 
-}  // namespace seplos_modbus
-}  // namespace esphome
+}  // namespace esphome::seplos_modbus

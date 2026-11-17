@@ -6,6 +6,8 @@ from esphome.const import CONF_ADDRESS, CONF_FLOW_CONTROL_PIN, CONF_ID
 from esphome.cpp_helpers import gpio_pin_expression
 
 DEPENDENCIES = ["uart"]
+CODEOWNERS = ["@syssi"]
+DOMAIN = "seplos_modbus"
 MULTI_CONF = True
 
 CONF_SEPLOS_MODBUS_ID = "seplos_modbus_id"
@@ -17,7 +19,8 @@ seplos_modbus_ns = cg.esphome_ns.namespace("seplos_modbus")
 SeplosModbus = seplos_modbus_ns.class_("SeplosModbus", cg.Component, uart.UARTDevice)
 SeplosModbusDevice = seplos_modbus_ns.class_("SeplosModbusDevice")
 
-CONFIG_SCHEMA = (
+CONFIG_SCHEMA = cv.All(
+    cv.require_esphome_version(2026, 1, 0),
     cv.Schema(
         {
             cv.GenerateID(): cv.declare_id(SeplosModbus),
@@ -28,7 +31,7 @@ CONFIG_SCHEMA = (
         }
     )
     .extend(cv.COMPONENT_SCHEMA)
-    .extend(uart.UART_DEVICE_SCHEMA)
+    .extend(uart.UART_DEVICE_SCHEMA),
 )
 
 
