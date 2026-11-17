@@ -181,7 +181,7 @@ sensor:
     update_interval: 60s
 
   # these sensors calcualte kWh (energy) and are very useful - the separate IN / OUT sensors are necessary for the HA default power monitoring and the https://github.com/slipx06/sunsynk-power-flow-card which is highly recommended
-  - { power_id: batt_0_power_net, platform: total_daily_energy, method: left, accuracy_decimals: 2, unit_of_measurement: 'kWh', id: batt_0_energy_net, name: "${batt_0} daily energy net"}
+  - { power_id: batt_0_power_net, platform: total_daily_energy, method: left, accuracy_decimals: 2, unit_of_measurement: 'kWh', state_class: total, id: batt_0_energy_net, name: "${batt_0} daily energy net"}
   - { power_id: batt_0_power_in, platform: total_daily_energy, method: left, accuracy_decimals: 2, unit_of_measurement: 'kWh', id: batt_0_energy_in, name: "${batt_0} daily energy in"}
   - { power_id: batt_0_power_out, platform: total_daily_energy, method: left, accuracy_decimals: 2, unit_of_measurement: 'kWh', id: batt_0_energy_out, name: "${batt_0} daily energy out"}
 
