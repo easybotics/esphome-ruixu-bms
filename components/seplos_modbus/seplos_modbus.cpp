@@ -210,7 +210,9 @@ bool SeplosModbus::parse_seplos_modbus_byte_(uint8_t byte) {
     return false;
   }
 
+  uint8_t request_function = 0;
   if (this->waiting_ && address == this->waiting_address_) {
+    request_function = this->waiting_function_;
     this->waiting_ = false;
     this->bus_free_since_ = millis();
   }
@@ -218,6 +220,7 @@ bool SeplosModbus::parse_seplos_modbus_byte_(uint8_t byte) {
   bool found = false;
   for (auto *device : this->devices_) {
     if (device->address_ == address) {
+      device->last_request_function_ = request_function;
       device->on_seplos_modbus_data(data);
       found = true;
     }

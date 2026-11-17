@@ -20,6 +20,16 @@ class SeplosBms : public PollingComponent, public seplos_modbus::SeplosModbusDev
   void set_online_status_binary_sensor(binary_sensor::BinarySensor *online_status_binary_sensor) {
     online_status_binary_sensor_ = online_status_binary_sensor;
   }
+  // Ruixu 0x44 alarm/status reply
+  void set_charging_mosfet_binary_sensor(binary_sensor::BinarySensor *s) { charging_mosfet_binary_sensor_ = s; }
+  void set_discharging_mosfet_binary_sensor(binary_sensor::BinarySensor *s) { discharging_mosfet_binary_sensor_ = s; }
+  void set_precharge_mosfet_binary_sensor(binary_sensor::BinarySensor *s) { precharge_mosfet_binary_sensor_ = s; }
+  void set_charging_binary_sensor(binary_sensor::BinarySensor *s) { charging_binary_sensor_ = s; }
+  void set_discharging_binary_sensor(binary_sensor::BinarySensor *s) { discharging_binary_sensor_ = s; }
+  void set_heating_binary_sensor(binary_sensor::BinarySensor *s) { heating_binary_sensor_ = s; }
+  void set_fully_charged_binary_sensor(binary_sensor::BinarySensor *s) { fully_charged_binary_sensor_ = s; }
+  void set_alarm_binary_sensor(binary_sensor::BinarySensor *s) { alarm_binary_sensor_ = s; }
+  void set_status_bytes_text_sensor(text_sensor::TextSensor *s) { status_bytes_text_sensor_ = s; }
 
   void set_min_cell_voltage_sensor(sensor::Sensor *min_cell_voltage_sensor) {
     min_cell_voltage_sensor_ = min_cell_voltage_sensor;
@@ -87,6 +97,15 @@ class SeplosBms : public PollingComponent, public seplos_modbus::SeplosModbusDev
 
  protected:
   binary_sensor::BinarySensor *online_status_binary_sensor_{nullptr};
+  binary_sensor::BinarySensor *charging_mosfet_binary_sensor_{nullptr};
+  binary_sensor::BinarySensor *discharging_mosfet_binary_sensor_{nullptr};
+  binary_sensor::BinarySensor *precharge_mosfet_binary_sensor_{nullptr};
+  binary_sensor::BinarySensor *charging_binary_sensor_{nullptr};
+  binary_sensor::BinarySensor *discharging_binary_sensor_{nullptr};
+  binary_sensor::BinarySensor *heating_binary_sensor_{nullptr};
+  binary_sensor::BinarySensor *fully_charged_binary_sensor_{nullptr};
+  binary_sensor::BinarySensor *alarm_binary_sensor_{nullptr};
+  text_sensor::TextSensor *status_bytes_text_sensor_{nullptr};
 
   sensor::Sensor *min_cell_voltage_sensor_{nullptr};
   sensor::Sensor *max_cell_voltage_sensor_{nullptr};
@@ -126,6 +145,8 @@ class SeplosBms : public PollingComponent, public seplos_modbus::SeplosModbusDev
   void publish_state_(text_sensor::TextSensor *text_sensor, const std::string &state);
   void on_telemetry_data_(const std::vector<uint8_t> &data);
   void on_ruixu_telemetry_data_(const std::vector<uint8_t> &data);
+  void on_ruixu_alarm_data_(const std::vector<uint8_t> &data);
+  bool alarm_data_wanted_() const;
   void reset_online_status_tracker_();
   void track_online_status_();
   void publish_device_unavailable_();

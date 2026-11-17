@@ -74,6 +74,8 @@ class SeplosModbusDevice {
   friend SeplosModbus;
 
   SeplosModbus *parent_;
+  // CID2 of the request this reply answers, 0 if the reply was not requested by us
+  uint8_t last_request_function_{0};
   uint8_t address_;
   uint8_t pack_;
   uint8_t protocol_version_;

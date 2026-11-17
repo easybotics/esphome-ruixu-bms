@@ -31,6 +31,10 @@ void SeplosBms::on_seplos_modbus_data(const std::vector<uint8_t> &data) {
   // 14             77           142 (0x8E)
   // 15             79           146 (0x92)
   // 16             81           150 (0x96)
+  if (this->telemetry_layout_ == TELEMETRY_LAYOUT_RUIXU && this->last_request_function_ == 0x44) {
+    this->on_ruixu_alarm_data_(data);
+    return;
+  }
   if (this->telemetry_layout_ == TELEMETRY_LAYOUT_RUIXU) {
     // Ruixu has no command group byte, so the cell count is byte 7 rather than 8
     const uint8_t cells = data.size() < 44 ? 0 : (this->override_cell_count_ ? this->override_cell_count_ : data[7]);
@@ -181,6 +185,16 @@ void SeplosBms::dump_config() {
   ESP_LOGCONFIG(TAG, "SeplosBms:");
   ESP_LOGCONFIG(TAG, "  Telemetry layout: %s",
                 this->telemetry_layout_ == TELEMETRY_LAYOUT_RUIXU ? "Ruixu" : "Seplos");
+  ESP_LOGCONFIG(TAG, "  Alarm/status (0x44) requests: %s", YESNO(this->alarm_data_wanted_()));
+  LOG_BINARY_SENSOR("", "Charging MOSFET", this->charging_mosfet_binary_sensor_);
+  LOG_BINARY_SENSOR("", "Discharging MOSFET", this->discharging_mosfet_binary_sensor_);
+  LOG_BINARY_SENSOR("", "Pre-charge MOSFET", this->precharge_mosfet_binary_sensor_);
+  LOG_BINARY_SENSOR("", "Charging", this->charging_binary_sensor_);
+  LOG_BINARY_SENSOR("", "Discharging", this->discharging_binary_sensor_);
+  LOG_BINARY_SENSOR("", "Heating", this->heating_binary_sensor_);
+  LOG_BINARY_SENSOR("", "Fully charged", this->fully_charged_binary_sensor_);
+  LOG_BINARY_SENSOR("", "Alarm", this->alarm_binary_sensor_);
+  LOG_TEXT_SENSOR("", "Status bytes", this->status_bytes_text_sensor_);
   LOG_SENSOR("", "Minimum Cell Voltage", this->min_cell_voltage_sensor_);
   LOG_SENSOR("", "Maximum Cell Voltage", this->max_cell_voltage_sensor_);
   LOG_SENSOR("", "Minimum Voltage Cell", this->min_voltage_cell_sensor_);
@@ -330,6 +344,144 @@ void SeplosBms::on_ruixu_telemetry_data_(const std::vector<uint8_t> &data) {
 void SeplosBms::update() {
   this->track_online_status_();
   this->send(0x42, this->pack_);
+  if (this->alarm_data_wanted_())
+    this->send(0x44, this->pack_);
+}
+
+bool SeplosBms::alarm_data_wanted_() const {
+  return this->telemetry_layout_ == TELEMETRY_LAYOUT_RUIXU &&
+         (this->charging_mosfet_binary_sensor_ != nullptr || this->discharging_mosfet_binary_sensor_ != nullptr ||
+          this->precharge_mosfet_binary_sensor_ != nullptr || this->charging_binary_sensor_ != nullptr ||
+          this->discharging_binary_sensor_ != nullptr || this->heating_binary_sensor_ != nullptr ||
+          this->fully_charged_binary_sensor_ != nullptr || this->alarm_binary_sensor_ != nullptr ||
+          this->errors_text_sensor_ != nullptr || this->status_bytes_text_sensor_ != nullptr);
+}
+
+// Ruixu reply to 0x44 (alarm/status). Captured from an idle pack (current 0 A, SOC 59 %):
+//
+// ~21004600204A00 10 00x16 07 00x7 00 00 08 00 06 00 00 00 00 00 00 EFA6
+//
+// Byte  Content                                  Example
+//   6   Data flag                                0x00
+//   7   Number of cells M                        0x10
+//   8   Cell states, M bytes                     0x00 (00 normal, 01 below limit, 02 above limit, F0 other)
+//   o   Number of temperatures N, then N states  0x07, 0x00 x7
+//   t   Current state, pack voltage state        0x00 0x00
+//  t+2  Number of status bytes P                 0x08
+//  t+3  Status 1..5, then P-5 unknown bytes      0x00 0x06 0x00 0x00 0x00 0x00 0x00 0x00
+//
+// Status bit meanings are Pylontech RS485 V3.3 (section 3.5). The layout matches the capture; the bit
+// meanings are inferred until confirmed in each state, so the raw bytes are also published.
+void SeplosBms::on_ruixu_alarm_data_(const std::vector<uint8_t> &data) {
+  ESP_LOGD(TAG, "Ruixu alarm frame (%zu bytes) received", data.size());
+  log_hex_chunked(TAG, data.data(), data.size());
+
+  if (data.size() < 9) {
+    ESP_LOGW(TAG, "Ruixu alarm frame too short (%zu bytes)", data.size());
+    return;
+  }
+  const uint8_t cells = data[7];
+  const size_t offset = 8 + cells;
+  if (cells > 16 || data.size() < offset + 1) {
+    ESP_LOGW(TAG, "Ruixu alarm frame has %u cells in %zu bytes", cells, data.size());
+    return;
+  }
+  const uint8_t temperatures = data[offset];
+  const size_t states = offset + 1 + temperatures;  // current state, voltage state, P
+  if (temperatures > 16 || data.size() < states + 3) {
+    ESP_LOGW(TAG, "Ruixu alarm frame too short (%zu bytes) for %u temperatures", data.size(), temperatures);
+    return;
+  }
+  const uint8_t current_state = data[states];
+  const uint8_t voltage_state = data[states + 1];
+  const uint8_t status_count = data[states + 2];
+  const size_t status = states + 3;
+  if (status_count < 5 || data.size() < status + status_count) {
+    ESP_LOGW(TAG, "Ruixu alarm frame: %u status bytes in %zu bytes", status_count, data.size());
+    return;
+  }
+  const uint8_t s1 = data[status];
+  const uint8_t s2 = data[status + 1];
+  const uint8_t s3 = data[status + 2];
+  const uint8_t s4 = data[status + 3];
+  const uint8_t s5 = data[status + 4];
+
+  // Status 2: bit2 discharge MOSFET, bit1 charge MOSFET, bit0 pre-charge MOSFET
+  this->publish_state_(this->discharging_mosfet_binary_sensor_, (s2 & 0x04) != 0);
+  this->publish_state_(this->charging_mosfet_binary_sensor_, (s2 & 0x02) != 0);
+  this->publish_state_(this->precharge_mosfet_binary_sensor_, (s2 & 0x01) != 0);
+  // Status 3: bit7 charge current, bit6 discharge current, bit5 heater, bit3 fully charged
+  this->publish_state_(this->charging_binary_sensor_, (s3 & 0x80) != 0);
+  this->publish_state_(this->discharging_binary_sensor_, (s3 & 0x40) != 0);
+  this->publish_state_(this->heating_binary_sensor_, (s3 & 0x20) != 0);
+  this->publish_state_(this->fully_charged_binary_sensor_, (s3 & 0x08) != 0);
+
+  std::string alarms;
+  auto add = [&alarms](const char *text) {
+    if (!alarms.empty())
+      alarms += "; ";
+    alarms += text;
+  };
+  auto state_name = [](uint8_t state) -> const char * {
+    switch (state) {
+      case 0x01:
+        return "low";
+      case 0x02:
+        return "high";
+      default:
+        return "fault";
+    }
+  };
+  char buf[48];
+  for (uint8_t i = 0; i < cells; i++) {
+    if (data[8 + i] != 0x00) {
+      snprintf(buf, sizeof(buf), "Cell %u %s", i + 1, state_name(data[8 + i]));
+      add(buf);
+    }
+  }
+  for (uint8_t i = 0; i < temperatures; i++) {
+    if (data[offset + 1 + i] != 0x00) {
+      snprintf(buf, sizeof(buf), "Temperature %u %s", i + 1, state_name(data[offset + 1 + i]));
+      add(buf);
+    }
+  }
+  if (current_state != 0x00) {
+    snprintf(buf, sizeof(buf), "Current %s", state_name(current_state));
+    add(buf);
+  }
+  if (voltage_state != 0x00) {
+    snprintf(buf, sizeof(buf), "Pack voltage %s", state_name(voltage_state));
+    add(buf);
+  }
+  static const char *const STATUS1[8] = {"Pack overvoltage",       "Cell undervoltage",     "Charge overcurrent",
+                                         nullptr,                  "Discharge overcurrent", "Discharge overtemperature",
+                                         "Charge overtemperature", "Pack undervoltage"};
+  for (uint8_t bit = 0; bit < 8; bit++) {
+    if ((s1 & (1 << bit)) && STATUS1[bit] != nullptr)
+      add(STATUS1[bit]);
+  }
+  for (uint8_t bit = 0; bit < 8; bit++) {
+    if (s4 & (1 << bit)) {
+      snprintf(buf, sizeof(buf), "Cell %u voltage error", bit + 1);
+      add(buf);
+    }
+    if (s5 & (1 << bit)) {
+      snprintf(buf, sizeof(buf), "Cell %u voltage error", bit + 9);
+      add(buf);
+    }
+  }
+  this->publish_state_(this->alarm_binary_sensor_, !alarms.empty());
+  this->publish_state_(this->errors_text_sensor_, alarms.empty() ? std::string("No alarms") : alarms);
+
+  // Raw status for confirming the bit meanings: the P status bytes, then current and voltage state
+  std::string raw;
+  for (uint8_t i = 0; i < status_count; i++) {
+    snprintf(buf, sizeof(buf), i ? " %02X" : "%02X", data[status + i]);
+    raw += buf;
+  }
+  snprintf(buf, sizeof(buf), " | cur %02X volt %02X", current_state, voltage_state);
+  raw += buf;
+  this->publish_state_(this->status_bytes_text_sensor_, raw);
 }
 
 void SeplosBms::publish_state_(binary_sensor::BinarySensor *binary_sensor, const bool &state) {
