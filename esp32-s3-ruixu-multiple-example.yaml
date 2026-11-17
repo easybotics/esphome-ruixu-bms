@@ -8,23 +8,25 @@ substitutions:
   device_description: "Monitor and control a Ruixu BMS via RS485 (Modbus) with M5Stack Atomic ESP32 S3 lite"
   tx_pin: GPIO2   # M5stack Atom S3 + Atomic RS485 base = GPIO6 | Isolated RS485 Grove module = GPIO2
   rx_pin: GPIO1   # M5stack Atom S3 + Atomic RS485 base = GPIO5 | Isolated RS485 Grove module = GPIO1
-  external_components_source: github://easybotics/esphome-ruixu-bms@main
+  external_components_source: github://easybotics/esphome-ruixu-bms@ruixu-v2.0.0
 
 esphome:
   name: ${name}
   friendly_name: ${friendly_name}
   comment: ${device_description}
-  min_version: 2024.6.0
+  min_version: 2026.1.0 # the component needs ESPHome 2026.1.0 or newer
   project:
-    name: "syssi.esphome-seplos-bms"
-    version: 1.2.0
+    name: "easybotics.esphome-ruixu-bms"
+    version: 2.0.0
 
 external_components:
   - source: ${external_components_source}
-    refresh: 0s
+    refresh: 1d
 
 preferences:
-  flash_write_interval: 24h # prevent the flash from wearing out 
+  # Daily energy counters are saved this often (and on every clean reboot such as an OTA).
+  # Was 24h, which brought back values up to a day old after a crash or power loss.
+  flash_write_interval: 15min
 
 esp32:
   board: esp32-s3-devkitc-1 # m5stack-atoms3 #hardware is M5stack Atom S3 Lite with Atomic RS485 base - but the closest define with this version of platformio is the esp32-s3-devkitc-1
@@ -54,6 +56,51 @@ wifi:
 time:
   - platform: homeassistant
     id: esptime
+    on_time_sync:
+      - script.execute: daily_energy_day_check
+    on_time:
+      - seconds: 30
+        minutes: 0
+        hours: 0
+        then:
+          - script.execute: daily_energy_day_check
+
+# total_daily_energy restores its last saved value on boot but not the date it belongs to,
+# so a reboot after midnight carried yesterday's total into today. Remember the day the
+# counters belong to and zero them if the clock says it is a different day.
+globals:
+  - id: energy_day
+    type: int
+    restore_value: true
+    initial_value: "0"
+
+script:
+  - id: daily_energy_day_check
+    then:
+      - lambda: |-
+          auto now = id(esptime).now();
+          if (!now.is_valid()) return;
+          const int today = now.year * 1000 + now.day_of_year;
+          if (id(energy_day) == today) return;
+          if (id(energy_day) != 0) {
+            ESP_LOGI("energy", "Daily energy counters belong to day %d, now %d: reset", id(energy_day), today);
+            id(batt_0_energy_net).publish_state_and_save(0);
+            id(batt_0_energy_in).publish_state_and_save(0);
+            id(batt_0_energy_out).publish_state_and_save(0);
+            id(batt_1_energy_net).publish_state_and_save(0);
+            id(batt_1_energy_in).publish_state_and_save(0);
+            id(batt_1_energy_out).publish_state_and_save(0);
+            id(batt_2_energy_net).publish_state_and_save(0);
+            id(batt_2_energy_in).publish_state_and_save(0);
+            id(batt_2_energy_out).publish_state_and_save(0);
+            id(batt_3_energy_net).publish_state_and_save(0);
+            id(batt_3_energy_in).publish_state_and_save(0);
+            id(batt_3_energy_out).publish_state_and_save(0);
+            id(bank_energy_net).publish_state_and_save(0);
+            id(bank_energy_in).publish_state_and_save(0);
+            id(bank_energy_out).publish_state_and_save(0);
+          }
+          id(energy_day) = today;
 
 uart:
   - id: uart_0
@@ -81,6 +128,8 @@ seplos_modbus:
 # the master battery CAN lines (middle pair) go to the inverter - the last pair (brown) go to the RS485 transceiver
 # it will NOT work correclty on the extra port on the last slave battery. 
 # the Ruixu BMS seems sensitive to when the data is sent - if the logs show only 1 battery data being received try adjusting the interval or just restarting the ESP32
+# protocol_version 0x21 selects the Ruixu frame layout (telemetry_layout: auto).
+# A pack that stops answering shows as offline, and its values become unknown after 5 missed polls.
 seplos_bms:
   - id: bms0 
     address: 0x00 # master BMS
@@ -97,8 +146,8 @@ seplos_bms:
     protocol_version: 0x21 # Known protocol versions: 0x20 (Seplos), 0x26 (Boqiang), 0x21 (Ruixu)
     seplos_modbus_id: modbus0
     update_interval: 5.5s
-  - id: bms2
-    address: 0x02 # slave #3
+  - id: bms3
+    address: 0x03 # slave #3
     protocol_version: 0x21 # Known protocol versions: 0x20 (Seplos), 0x26 (Boqiang), 0x21 (Ruixu)
     seplos_modbus_id: modbus0
     update_interval: 5.9s
@@ -108,21 +157,49 @@ binary_sensor:
   - platform: status # exposes the node state in HA
     name: "Node Status"
     id: system_status
+  - platform: seplos_bms
+    seplos_bms_id: bms0
+    online_status:
+      name: "${batt_0} online"
+  - platform: seplos_bms
+    seplos_bms_id: bms1
+    online_status:
+      name: "${batt_1} online"
+  - platform: seplos_bms
+    seplos_bms_id: bms2
+    online_status:
+      name: "${batt_2} online"
+  - platform: seplos_bms
+    seplos_bms_id: bms3
+    online_status:
+      name: "${batt_3} online"
+
+debug:
+  update_interval: 60s
 
 text_sensor:
+  - platform: debug
+    reset_reason:
+      name: "ESP reset reason"
   - platform: wifi_info # exposes the node IP in HA
     ip_address:
       name: ESP IP Address
       id: ip_address
 
 sensor:
+  - platform: uptime
+    name: "ESP uptime"
+    update_interval: 60s
+  - platform: wifi_signal
+    name: "ESP WiFi signal"
+    update_interval: 60s
 
   # these sensors calcualte kWh (energy) and are very useful - the separate IN / OUT sensors are necessary for the HA default power monitoring and the https://github.com/slipx06/sunsynk-power-flow-card which is highly recommended
   - { power_id: batt_0_power_net, platform: total_daily_energy, method: left, accuracy_decimals: 2, unit_of_measurement: 'kWh', id: batt_0_energy_net, name: "${batt_0} daily energy net"}
   - { power_id: batt_0_power_in, platform: total_daily_energy, method: left, accuracy_decimals: 2, unit_of_measurement: 'kWh', id: batt_0_energy_in, name: "${batt_0} daily energy in"}
   - { power_id: batt_0_power_out, platform: total_daily_energy, method: left, accuracy_decimals: 2, unit_of_measurement: 'kWh', id: batt_0_energy_out, name: "${batt_0} daily energy out"}      
 
-  - { power_id: batt_1_power_net, platform: total_daily_energy, method: left, accuracy_decimals: 2, unit_of_measurement: 'kWh', id: batt_1_net_energy_net, name: "${batt_1} daily energy net"}
+  - { power_id: batt_1_power_net, platform: total_daily_energy, method: left, accuracy_decimals: 2, unit_of_measurement: 'kWh', id: batt_1_energy_net, name: "${batt_1} daily energy net"}
   - { power_id: batt_1_power_in, platform: total_daily_energy, method: left, accuracy_decimals: 2, unit_of_measurement: 'kWh', id: batt_1_energy_in, name: "${batt_1} daily energy in"}
   - { power_id: batt_1_power_out, platform: total_daily_energy, method: left, accuracy_decimals: 2, unit_of_measurement: 'kWh', id: batt_1_energy_out, name: "${batt_1} daily energy out"}        
 

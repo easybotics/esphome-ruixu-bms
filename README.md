@@ -1,6 +1,49 @@
 # Ruixu changes
 
-Example YAML with 3x batteries: https://github.com/easybotics/esphome-ruixu-bms/blob/main/esp32-s3-ruixu-multiple-example.yaml
+This fork of [syssi/esphome-seplos-bms](https://github.com/syssi/esphome-seplos-bms) reads Ruixu battery packs
+(for example the 314 Ah 16S rack packs) over RS485. Ruixu answers the same Pylontech-style 0x42 request as Seplos,
+with a slightly different frame, so the component decodes it as its own layout.
+
+Example YAML:
+* One pack: [esp32-s3-ruixu-example.yaml](esp32-s3-ruixu-example.yaml)
+* Four packs, with bank totals: [esp32-s3-ruixu-multiple-example.yaml](esp32-s3-ruixu-multiple-example.yaml)
+
+## Requirements
+
+* ESPHome 2026.1.0 or newer (the upstream component's minimum).
+* Pin the component to a release tag in your YAML, for example
+  `github://easybotics/esphome-ruixu-bms@ruixu-v2.0.0`, so a later change here can't alter your device on the next build.
+
+## How the Ruixu frame differs from Seplos
+
+`telemetry_layout` on each `seplos_bms` entry picks the decoder: `auto` (default), `seplos` or `ruixu`. `auto` uses the
+Ruixu layout when `protocol_version` is `0x21`, so configs from the 2024 version need no change.
+
+| Field | Seplos | Ruixu |
+|---|---|---|
+| Command group byte before the cell count | yes | no |
+| Current | 0.01 A | 0.1 A |
+| State of charge / health | 16 bit, 0.1 % | 1 byte, whole % |
+| Rated capacity | yes | not sent |
+| Temperatures | 6 | 7 (the first 6 are published) |
+
+The full byte map, from a captured Ruixu response, is in the comment above `on_ruixu_telemetry_data_()` in
+[seplos_bms.cpp](components/seplos_bms/seplos_bms.cpp). Values were checked against an EG4 FlexBOSS21 reading the same
+three-pack bank over CAN: current, voltage, state of charge, state of health and cycle count agree.
+
+## Updating from the 2024 version (2.0.0, November 2026)
+
+* Two years of upstream changes merged in. Each pack now has an `online_status` binary sensor, and a pack that misses
+  5 polls in a row shows its values as unknown instead of keeping the last ones.
+* The examples:
+  * pin the component to a release tag;
+  * save the daily energy counters every 15 minutes instead of every 24 hours, and zero them when the ESP boots on a
+    later day than they were saved. Before, a reboot after a crash or power loss could carry old totals into the day;
+  * add uptime, WiFi signal and reset reason sensors;
+  * the four-pack example declared `bms2` twice (it did not compile), and the single-pack example did not parse (its
+    sensor block was not indented) and had no `time:` component, which the daily energy sensors need.
+* Keep the `name:` of every sensor when you update your YAML. ESPHome builds each entity's unique ID from its name, so
+  Home Assistant keeps the same entities, history and dashboards.
 
 Hardware used:
 * M5Stack ESP32 S3 Lite: https://docs.m5stack.com/en/core/AtomS3%20Lite
