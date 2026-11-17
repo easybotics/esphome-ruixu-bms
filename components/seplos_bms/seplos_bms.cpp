@@ -33,7 +33,8 @@ void SeplosBms::on_seplos_modbus_data(const std::vector<uint8_t> &data) {
   // 16             81           150 (0x96)
   if (this->telemetry_layout_ == TELEMETRY_LAYOUT_RUIXU) {
     // Ruixu has no command group byte, so the cell count is byte 7 rather than 8
-    if (data.size() >= 44 && data[7] >= 8 && data[7] <= 16) {
+    const uint8_t cells = data.size() < 44 ? 0 : (this->override_cell_count_ ? this->override_cell_count_ : data[7]);
+    if (cells >= 8 && cells <= 16) {
       this->on_ruixu_telemetry_data_(data);
       return;
     }

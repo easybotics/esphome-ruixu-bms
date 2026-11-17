@@ -113,6 +113,13 @@ bool SeplosModbus::parse_seplos_modbus_byte_(uint8_t byte) {
     return false;
   }
 
+  // Smallest valid frame: '~', 6 header bytes as 12 ASCII chars, 4 checksum chars, CR (at == 17).
+  // Shorter ones (e.g. a stray 0x7E followed by 0x0D within a few bytes) would underflow data_len.
+  if (at < 17) {
+    ESP_LOGVV(TAG, "Frame too short (%zu bytes), dropped", at + 1);
+    return false;
+  }
+
   uint16_t data_len = at - 4 - 1;
   uint16_t computed_crc = chksum(raw + 1, data_len);
   uint16_t remote_crc = uint16_t(ascii_hex_to_byte(raw[at - 4], raw[at - 3])) << 8 |

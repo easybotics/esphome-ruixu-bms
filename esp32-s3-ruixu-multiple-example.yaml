@@ -59,11 +59,14 @@ time:
     on_time_sync:
       - script.execute: daily_energy_day_check
     on_time:
+      # total_daily_energy zeroes itself at midnight; only record the new day here
       - seconds: 30
         minutes: 0
         hours: 0
         then:
-          - script.execute: daily_energy_day_check
+          - lambda: |-
+              auto now = id(esptime).now();
+              if (now.is_valid()) id(energy_day) = now.year * 1000 + now.day_of_year;
 
 # total_daily_energy restores its last saved value on boot but not the date it belongs to,
 # so a reboot after midnight carried yesterday's total into today. Remember the day the
