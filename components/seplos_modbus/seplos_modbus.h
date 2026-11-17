@@ -24,6 +24,8 @@ class SeplosModbus : public uart::UARTDevice, public Component {
   void send(uint8_t protocol_version, uint8_t address, uint8_t function, uint8_t value);
   void set_rx_timeout(uint16_t rx_timeout) { rx_timeout_ = rx_timeout; }
   void set_flow_control_pin(GPIOPin *flow_control_pin) { this->flow_control_pin_ = flow_control_pin; }
+  void set_response_timeout(uint16_t response_timeout) { response_timeout_ = response_timeout; }
+  void set_request_gap(uint16_t request_gap) { request_gap_ = request_gap; }
 
  protected:
   uint16_t rx_timeout_{150};
@@ -34,6 +36,24 @@ class SeplosModbus : public uart::UARTDevice, public Component {
   uint32_t last_seplos_modbus_byte_{0};
   uint32_t last_send_{0};
   std::vector<SeplosModbusDevice *> devices_;
+
+  // Requests are sent one at a time: the next one waits for the reply (or response_timeout_)
+  // plus request_gap_. Two packs polled back to back (23 ms apart) both failed on a Ruixu bus.
+  struct Request {
+    uint8_t protocol_version;
+    uint8_t address;
+    uint8_t function;
+    uint8_t value;
+  };
+  static constexpr size_t MAX_QUEUED_REQUESTS = 16;
+  std::vector<Request> queue_;
+  bool waiting_{false};
+  uint8_t waiting_address_{0};
+  uint32_t bus_free_since_{0};
+  uint16_t response_timeout_{500};
+  uint16_t request_gap_{50};
+  void process_queue_();
+  void transmit_(const Request &request);
 };
 
 uint16_t crc16(const uint8_t *data, uint8_t len);

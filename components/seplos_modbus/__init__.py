@@ -14,6 +14,8 @@ CONF_SEPLOS_MODBUS_ID = "seplos_modbus_id"
 CONF_RX_TIMEOUT = "rx_timeout"
 CONF_PROTOCOL_VERSION = "protocol_version"
 CONF_OVERRIDE_PACK = "override_pack"
+CONF_RESPONSE_TIMEOUT = "response_timeout"
+CONF_REQUEST_GAP = "request_gap"
 
 seplos_modbus_ns = cg.esphome_ns.namespace("seplos_modbus")
 SeplosModbus = seplos_modbus_ns.class_("SeplosModbus", cg.Component, uart.UARTDevice)
@@ -28,6 +30,14 @@ CONFIG_SCHEMA = cv.All(
                 CONF_RX_TIMEOUT, default="150ms"
             ): cv.positive_time_period_milliseconds,
             cv.Optional(CONF_FLOW_CONTROL_PIN): pins.gpio_output_pin_schema,
+            # Wait this long for a reply before sending the next queued request
+            cv.Optional(
+                CONF_RESPONSE_TIMEOUT, default="500ms"
+            ): cv.positive_time_period_milliseconds,
+            # Idle time on the bus between a reply and the next request
+            cv.Optional(
+                CONF_REQUEST_GAP, default="50ms"
+            ): cv.positive_time_period_milliseconds,
         }
     )
     .extend(cv.COMPONENT_SCHEMA)
@@ -42,6 +52,8 @@ async def to_code(config):
     await uart.register_uart_device(var, config)
 
     cg.add(var.set_rx_timeout(config[CONF_RX_TIMEOUT]))
+    cg.add(var.set_response_timeout(config[CONF_RESPONSE_TIMEOUT]))
+    cg.add(var.set_request_gap(config[CONF_REQUEST_GAP]))
     if CONF_FLOW_CONTROL_PIN in config:
         pin = await gpio_pin_expression(config[CONF_FLOW_CONTROL_PIN])
         cg.add(var.set_flow_control_pin(pin))

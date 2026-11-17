@@ -41,6 +41,25 @@ void SeplosModbus::loop() {
       this->rx_buffer_.clear();
     }
   }
+
+  this->process_queue_();
+}
+
+void SeplosModbus::process_queue_() {
+  const uint32_t now = millis();
+  if (this->waiting_) {
+    if (now - this->last_send_ < this->response_timeout_)
+      return;
+    ESP_LOGD(TAG, "No reply from 0x%02X within %u ms", this->waiting_address_, this->response_timeout_);
+    this->waiting_ = false;
+    this->bus_free_since_ = now;
+  }
+  if (this->queue_.empty() || now - this->bus_free_since_ < this->request_gap_)
+    return;
+
+  const Request request = this->queue_.front();
+  this->queue_.erase(this->queue_.begin());
+  this->transmit_(request);
 }
 
 uint16_t chksum(const uint8_t data[], const uint16_t len) {
@@ -136,6 +155,11 @@ bool SeplosModbus::parse_seplos_modbus_byte_(uint8_t byte) {
 
   uint8_t address = data[1];
 
+  if (this->waiting_ && address == this->waiting_address_) {
+    this->waiting_ = false;
+    this->bus_free_since_ = millis();
+  }
+
   bool found = false;
   for (auto *device : this->devices_) {
     if (device->address_ == address) {
@@ -156,6 +180,8 @@ void SeplosModbus::dump_config() {
   ESP_LOGCONFIG(TAG, "SeplosModbus:");
   LOG_PIN("  Flow Control Pin: ", this->flow_control_pin_);
   ESP_LOGCONFIG(TAG, "  RX timeout: %d ms", this->rx_timeout_);
+  ESP_LOGCONFIG(TAG, "  Response timeout: %u ms", this->response_timeout_);
+  ESP_LOGCONFIG(TAG, "  Request gap: %u ms", this->request_gap_);
 }
 float SeplosModbus::get_setup_priority() const {
   // After UART bus
@@ -163,6 +189,26 @@ float SeplosModbus::get_setup_priority() const {
 }
 
 void SeplosModbus::send(uint8_t protocol_version, uint8_t address, uint8_t function, uint8_t value) {
+  for (const auto &queued : this->queue_) {
+    if (queued.protocol_version == protocol_version && queued.address == address && queued.function == function &&
+        queued.value == value) {
+      ESP_LOGV(TAG, "Request 0x%02X to 0x%02X already queued", function, address);
+      return;
+    }
+  }
+  if (this->queue_.size() >= MAX_QUEUED_REQUESTS) {
+    ESP_LOGW(TAG, "Request queue full, dropping request 0x%02X to 0x%02X", function, address);
+    return;
+  }
+  this->queue_.push_back(Request{protocol_version, address, function, value});
+  this->process_queue_();
+}
+
+void SeplosModbus::transmit_(const Request &request) {
+  const uint8_t protocol_version = request.protocol_version;
+  const uint8_t address = request.address;
+  const uint8_t function = request.function;
+  const uint8_t value = request.value;
   if (this->flow_control_pin_ != nullptr)
     this->flow_control_pin_->digital_write(true);
 
@@ -194,6 +240,10 @@ void SeplosModbus::send(uint8_t protocol_version, uint8_t address, uint8_t funct
 
   if (this->flow_control_pin_ != nullptr)
     this->flow_control_pin_->digital_write(false);
+
+  this->waiting_ = true;
+  this->waiting_address_ = address;
+  this->last_send_ = millis();
 }
 
 }  // namespace esphome::seplos_modbus
