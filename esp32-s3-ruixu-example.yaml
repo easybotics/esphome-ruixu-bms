@@ -5,7 +5,7 @@ substitutions:
   device_description: "Monitor and control a Ruixu BMS via RS485 (Modbus) with M5Stack Atomic ESP32 S3 lite"
   tx_pin: GPIO2   # M5stack Atom S3 + Atomic RS485 base = GPIO6 | Isolated RS485 Grove module = GPIO2
   rx_pin: GPIO1   # M5stack Atom S3 + Atomic RS485 base = GPIO5 | Isolated RS485 Grove module = GPIO1
-  external_components_source: github://easybotics/esphome-ruixu-bms@ruixu-v2.2.0-beta.1
+  external_components_source: github://easybotics/esphome-ruixu-bms@ruixu-v2.2.0
 
 esphome:
   name: ${name}
@@ -13,7 +13,7 @@ esphome:
   min_version: 2026.1.0 # the component needs ESPHome 2026.1.0 or newer
   project:
     name: "easybotics.esphome-ruixu-bms"
-    version: 2.2.0-beta.1
+    version: 2.2.0
 
 external_components:
   - source: ${external_components_source}

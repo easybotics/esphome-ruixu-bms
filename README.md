@@ -12,7 +12,7 @@ Example YAML:
 
 * ESPHome 2026.1.0 or newer (the upstream component's minimum).
 * Pin the component to a release tag in your YAML, for example
-  `github://easybotics/esphome-ruixu-bms@ruixu-v2.1.0`, so a later change here can't alter your device on the next build.
+  `github://easybotics/esphome-ruixu-bms@ruixu-v2.2.0`, so a later change here can't alter your device on the next build.
 
 ## How the Ruixu frame differs from Seplos
 
@@ -31,7 +31,7 @@ The full byte map, from a captured Ruixu response, is in the comment above `on_r
 [seplos_bms.cpp](components/seplos_bms/seplos_bms.cpp). Values were checked against an EG4 FlexBOSS21 reading the same
 three-pack bank over CAN: current, voltage, state of charge, state of health and cycle count agree.
 
-## Alarm and status entities (2.2.0 beta)
+## Alarm and status entities (2.2.0)
 
 Add any of these to a pack's `binary_sensor` / `text_sensor` entry (Ruixu layout only); the component then also
 sends the 0x44 alarm/status request each update:
@@ -40,8 +40,9 @@ sends the 0x44 alarm/status request each update:
   `fully_charged`, `alarm`;
 * text sensors: `errors` (the active alarms, or "No alarms"), `status_bytes` (the raw status bytes).
 
-Both examples have them. The discharge bit and MOSFET bits are confirmed on real packs; see
-[docs/ruixu-protocol-notes.md](docs/ruixu-protocol-notes.md) for what is still being confirmed.
+Both examples have them. The discharge and MOSFET bits are confirmed on real packs; the charging, fully-charged,
+heater and alarm bits follow the Pylontech V3.3 spec and have not yet been seen set on a Ruixu pack. If one looks
+wrong, `status_bytes` shows the raw bytes; see [docs/ruixu-protocol-notes.md](docs/ruixu-protocol-notes.md).
 
 ## Bus timing and error replies (2.1.0)
 
