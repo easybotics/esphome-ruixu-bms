@@ -24,15 +24,18 @@ static void log_hex_chunked(const char *tag, const uint8_t *data, size_t size) {
 static const uint8_t MAX_NO_RESPONSE_COUNT = 5;
 
 void SeplosBms::on_seplos_modbus_data(const std::vector<uint8_t> &data) {
-  this->reset_online_status_tracker_();
+  // A pack counts as online when its telemetry decodes (the Ruixu 0x44 reply alone does not)
 
   // num_of_cells   frame_size   data_len
   // 8              65           118 (0x76)   guessed
   // 14             77           142 (0x8E)
   // 15             79           146 (0x92)
   // 16             81           150 (0x96)
-  if (this->telemetry_layout_ == TELEMETRY_LAYOUT_RUIXU && this->last_request_function_ == 0x44) {
-    this->on_ruixu_alarm_data_(data);
+  // A late 0x42 reply can arrive while the 0x44 request is outstanding; the alarm decoder rejects
+  // anything that is not exactly a 0x44 frame and it then goes on to the telemetry check below.
+  // An unrequested reply (last_request_function_ 0, e.g. after a timeout) is tried as well.
+  if (this->telemetry_layout_ == TELEMETRY_LAYOUT_RUIXU && this->last_request_function_ != 0x42 &&
+      this->alarm_data_wanted_() && this->on_ruixu_alarm_data_(data)) {
     return;
   }
   if (this->telemetry_layout_ == TELEMETRY_LAYOUT_RUIXU) {
@@ -43,6 +46,7 @@ void SeplosBms::on_seplos_modbus_data(const std::vector<uint8_t> &data) {
       return;
     }
   } else if (data.size() >= 44 && data[8] >= 8 && data[8] <= 16) {
+    this->reset_online_status_tracker_();
     this->on_telemetry_data_(data);
     return;
   }
@@ -287,6 +291,7 @@ void SeplosBms::on_ruixu_telemetry_data_(const std::vector<uint8_t> &data) {
              temperature_sensors);
     return;
   }
+  this->reset_online_status_tracker_();
 
   float min_cell_voltage = 100.0f;
   float max_cell_voltage = -100.0f;
@@ -344,7 +349,7 @@ void SeplosBms::on_ruixu_telemetry_data_(const std::vector<uint8_t> &data) {
 void SeplosBms::update() {
   this->track_online_status_();
   this->send(0x42, this->pack_);
-  if (this->alarm_data_wanted_())
+  if (this->alarm_data_wanted_() && this->no_response_count_ <= 1)
     this->send(0x44, this->pack_);
 }
 
@@ -354,7 +359,7 @@ bool SeplosBms::alarm_data_wanted_() const {
           this->precharge_mosfet_binary_sensor_ != nullptr || this->charging_binary_sensor_ != nullptr ||
           this->discharging_binary_sensor_ != nullptr || this->heating_binary_sensor_ != nullptr ||
           this->fully_charged_binary_sensor_ != nullptr || this->alarm_binary_sensor_ != nullptr ||
-          this->errors_text_sensor_ != nullptr || this->status_bytes_text_sensor_ != nullptr);
+          this->status_bytes_text_sensor_ != nullptr);
 }
 
 // Ruixu reply to 0x44 (alarm/status). Captured from an idle pack (current 0 A, SOC 59 %):
@@ -372,34 +377,28 @@ bool SeplosBms::alarm_data_wanted_() const {
 //
 // Status bit meanings are Pylontech RS485 V3.3 (section 3.5). The layout matches the capture; the bit
 // meanings are inferred until confirmed in each state, so the raw bytes are also published.
-void SeplosBms::on_ruixu_alarm_data_(const std::vector<uint8_t> &data) {
-  ESP_LOGD(TAG, "Ruixu alarm frame (%zu bytes) received", data.size());
-  log_hex_chunked(TAG, data.data(), data.size());
-
-  if (data.size() < 9) {
-    ESP_LOGW(TAG, "Ruixu alarm frame too short (%zu bytes)", data.size());
-    return;
-  }
+bool SeplosBms::on_ruixu_alarm_data_(const std::vector<uint8_t> &data) {
+  // Accept only a frame whose counts add up to exactly its length
+  if (data.size() < 9)
+    return false;
   const uint8_t cells = data[7];
   const size_t offset = 8 + cells;
-  if (cells > 16 || data.size() < offset + 1) {
-    ESP_LOGW(TAG, "Ruixu alarm frame has %u cells in %zu bytes", cells, data.size());
-    return;
-  }
+  if (cells < 1 || cells > 16 || data.size() < offset + 1)
+    return false;
   const uint8_t temperatures = data[offset];
   const size_t states = offset + 1 + temperatures;  // current state, voltage state, P
-  if (temperatures > 16 || data.size() < states + 3) {
-    ESP_LOGW(TAG, "Ruixu alarm frame too short (%zu bytes) for %u temperatures", data.size(), temperatures);
-    return;
-  }
+  if (temperatures > 16 || data.size() < states + 3)
+    return false;
   const uint8_t current_state = data[states];
   const uint8_t voltage_state = data[states + 1];
   const uint8_t status_count = data[states + 2];
   const size_t status = states + 3;
-  if (status_count < 5 || data.size() < status + status_count) {
-    ESP_LOGW(TAG, "Ruixu alarm frame: %u status bytes in %zu bytes", status_count, data.size());
-    return;
+  if (status_count < 5 || data.size() != status + status_count) {
+    ESP_LOGD(TAG, "Reply to 0x44 is not an alarm frame (%zu bytes)", data.size());
+    return false;
   }
+  ESP_LOGD(TAG, "Ruixu alarm frame (%zu bytes) received", data.size());
+  log_hex_chunked(TAG, data.data(), data.size());
   const uint8_t s1 = data[status];
   const uint8_t s2 = data[status + 1];
   const uint8_t s3 = data[status + 2];
@@ -470,6 +469,10 @@ void SeplosBms::on_ruixu_alarm_data_(const std::vector<uint8_t> &data) {
       add(buf);
     }
   }
+  if (alarms.size() > 250) {  // Home Assistant rejects states over 255 characters
+    alarms.resize(247);
+    alarms += "...";
+  }
   this->publish_state_(this->alarm_binary_sensor_, !alarms.empty());
   this->publish_state_(this->errors_text_sensor_, alarms.empty() ? std::string("No alarms") : alarms);
 
@@ -482,6 +485,7 @@ void SeplosBms::on_ruixu_alarm_data_(const std::vector<uint8_t> &data) {
   snprintf(buf, sizeof(buf), " | cur %02X volt %02X", current_state, voltage_state);
   raw += buf;
   this->publish_state_(this->status_bytes_text_sensor_, raw);
+  return true;
 }
 
 void SeplosBms::publish_state_(binary_sensor::BinarySensor *binary_sensor, const bool &state) {
@@ -523,6 +527,7 @@ void SeplosBms::reset_online_status_tracker_() {
 void SeplosBms::publish_device_unavailable_() {
   this->publish_state_(this->online_status_binary_sensor_, false);
   this->publish_state_(this->errors_text_sensor_, "Offline");
+  this->publish_state_(this->alarm_binary_sensor_, true);
 
   this->publish_state_(this->min_cell_voltage_sensor_, NAN);
   this->publish_state_(this->max_cell_voltage_sensor_, NAN);

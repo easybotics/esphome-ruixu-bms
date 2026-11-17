@@ -145,7 +145,7 @@ class SeplosBms : public PollingComponent, public seplos_modbus::SeplosModbusDev
   void publish_state_(text_sensor::TextSensor *text_sensor, const std::string &state);
   void on_telemetry_data_(const std::vector<uint8_t> &data);
   void on_ruixu_telemetry_data_(const std::vector<uint8_t> &data);
-  void on_ruixu_alarm_data_(const std::vector<uint8_t> &data);
+  bool on_ruixu_alarm_data_(const std::vector<uint8_t> &data);
   bool alarm_data_wanted_() const;
   void reset_online_status_tracker_();
   void track_online_status_();
