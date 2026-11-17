@@ -12,7 +12,7 @@ Example YAML:
 
 * ESPHome 2026.1.0 or newer (the upstream component's minimum).
 * Pin the component to a release tag in your YAML, for example
-  `github://easybotics/esphome-ruixu-bms@ruixu-v2.0.0`, so a later change here can't alter your device on the next build.
+  `github://easybotics/esphome-ruixu-bms@ruixu-v2.1.0`, so a later change here can't alter your device on the next build.
 
 ## How the Ruixu frame differs from Seplos
 
@@ -30,6 +30,16 @@ Ruixu layout when `protocol_version` is `0x21`, so configs from the 2024 version
 The full byte map, from a captured Ruixu response, is in the comment above `on_ruixu_telemetry_data_()` in
 [seplos_bms.cpp](components/seplos_bms/seplos_bms.cpp). Values were checked against an EG4 FlexBOSS21 reading the same
 three-pack bank over CAN: current, voltage, state of charge, state of health and cycle count agree.
+
+## Bus timing and error replies (2.1.0)
+
+* Requests are sent one at a time: the next waits for the reply, or `response_timeout` (default 1000 ms), plus
+  `request_gap` (default 100 ms). Both are options on `seplos_modbus`. Before this, two packs polled in the same loop
+  pass both failed, and the master answered with error 0x03.
+* An error reply is logged with its meaning, for example `Request 0x42 to 0x01 failed: 0x00 answered with error 0x03
+  (LCHKSUM error (length checksum), request arrived garbled)`.
+* What is known about the protocol, including the 0x44 alarm, 0x51 manufacturer and 0x4D time replies and the binary
+  0xEF frames on the same bus: [docs/ruixu-protocol-notes.md](docs/ruixu-protocol-notes.md).
 
 ## Updating from the 2024 version (2.0.0, November 2026)
 
