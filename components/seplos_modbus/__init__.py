@@ -32,11 +32,11 @@ CONFIG_SCHEMA = cv.All(
             cv.Optional(CONF_FLOW_CONTROL_PIN): pins.gpio_output_pin_schema,
             # Wait this long for a reply before sending the next queued request
             cv.Optional(
-                CONF_RESPONSE_TIMEOUT, default="500ms"
+                CONF_RESPONSE_TIMEOUT, default="1000ms"
             ): cv.positive_time_period_milliseconds,
             # Idle time on the bus between a reply and the next request
             cv.Optional(
-                CONF_REQUEST_GAP, default="50ms"
+                CONF_REQUEST_GAP, default="100ms"
             ): cv.positive_time_period_milliseconds,
         }
     )

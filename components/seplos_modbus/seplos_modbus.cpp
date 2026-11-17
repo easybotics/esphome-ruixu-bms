@@ -15,6 +15,45 @@ static constexpr size_t MAX_HEX_DUMP_BYTES = 100;
 
 static const uint16_t MAX_RESPONSE_SIZE = 340;
 
+// Return codes (RTN, byte 3 of a reply). 0x01-0x06 and 0x90/0x91 are in the Pylontech RS485 protocol
+// V3.3 (2018) and Seplos V2.0; 0x07 and 0xE1-0xE4 are Seplos-only, 0x09 is PACE-only.
+static const char *return_code_to_string(uint8_t rtn) {
+  switch (rtn) {
+    case 0x00:
+      return "normal";
+    case 0x01:
+      return "VER error";
+    case 0x02:
+      return "CHKSUM error (frame checksum)";
+    case 0x03:
+      return "LCHKSUM error (length checksum), request arrived garbled";
+    case 0x04:
+      return "CID2 invalid (unknown command)";
+    case 0x05:
+      return "command format error";
+    case 0x06:
+      return "invalid data";
+    case 0x07:
+      return "no data";
+    case 0x09:
+      return "operation or write error";
+    case 0x90:
+      return "ADR error";
+    case 0x91:
+      return "internal communication error (master to slave pack)";
+    case 0xE1:
+      return "CID1 invalid";
+    case 0xE2:
+      return "command execution failed";
+    case 0xE3:
+      return "device fault";
+    case 0xE4:
+      return "invalid permission";
+    default:
+      return "undocumented";
+  }
+}
+
 void SeplosModbus::setup() {
   if (this->flow_control_pin_ != nullptr) {
     this->flow_control_pin_->setup();
@@ -154,6 +193,22 @@ bool SeplosModbus::parse_seplos_modbus_byte_(uint8_t byte) {
   }
 
   uint8_t address = data[1];
+  const uint8_t return_code = data[3];
+
+  if (return_code != 0x00) {
+    // An error reply carries no data. It may not come from the addressed pack (a garbled request
+    // to a slave was answered by the master), so report it against the request that was outstanding.
+    if (this->waiting_) {
+      ESP_LOGW(TAG, "Request 0x%02X to 0x%02X failed: 0x%02X answered with error 0x%02X (%s)", this->waiting_function_,
+               this->waiting_address_, address, return_code, return_code_to_string(return_code));
+      this->waiting_ = false;
+      this->bus_free_since_ = millis();
+    } else {
+      ESP_LOGW(TAG, "Unrequested error reply from 0x%02X: 0x%02X (%s)", address, return_code,
+               return_code_to_string(return_code));
+    }
+    return false;
+  }
 
   if (this->waiting_ && address == this->waiting_address_) {
     this->waiting_ = false;
@@ -243,6 +298,7 @@ void SeplosModbus::transmit_(const Request &request) {
 
   this->waiting_ = true;
   this->waiting_address_ = address;
+  this->waiting_function_ = function;
   this->last_send_ = millis();
 }
 

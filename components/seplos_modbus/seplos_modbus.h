@@ -49,9 +49,10 @@ class SeplosModbus : public uart::UARTDevice, public Component {
   std::vector<Request> queue_;
   bool waiting_{false};
   uint8_t waiting_address_{0};
+  uint8_t waiting_function_{0};
   uint32_t bus_free_since_{0};
-  uint16_t response_timeout_{500};
-  uint16_t request_gap_{50};
+  uint16_t response_timeout_{1000};
+  uint16_t request_gap_{100};
   void process_queue_();
   void transmit_(const Request &request);
 };
