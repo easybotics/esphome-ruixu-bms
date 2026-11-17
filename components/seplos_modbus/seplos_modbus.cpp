@@ -40,7 +40,7 @@ static const char *return_code_to_string(uint8_t rtn) {
     case 0x90:
       return "ADR error";
     case 0x91:
-      return "internal communication error (master to slave pack)";
+      return "internal communication error (between packs)";
     case 0xE1:
       return "CID1 invalid";
     case 0xE2:
@@ -171,9 +171,10 @@ bool SeplosModbus::parse_seplos_modbus_byte_(uint8_t byte) {
     return false;
   }
 
-  // Smallest valid frame: '~', 6 header bytes as 12 ASCII chars, 4 checksum chars, CR (at == 17).
-  // Shorter ones (e.g. a stray 0x7E followed by 0x0D within a few bytes) would underflow data_len.
-  if (at < 17) {
+  // Smallest frame we can use: '~', VER ADR CID1 RTN as 8 ASCII chars, 4 checksum chars, CR (at == 13).
+  // Shorter ones (e.g. a stray 0x7E followed by 0x0D within a few bytes) would underflow data_len,
+  // and the address (byte 1) and return code (byte 3) must be present.
+  if (at < 13) {
     ESP_LOGVV(TAG, "Frame too short (%zu bytes), dropped", at + 1);
     return false;
   }
@@ -197,7 +198,7 @@ bool SeplosModbus::parse_seplos_modbus_byte_(uint8_t byte) {
 
   if (return_code != 0x00) {
     // An error reply carries no data. It may not come from the addressed pack (a garbled request
-    // to a slave was answered by the master), so report it against the request that was outstanding.
+    // to a secondary pack was answered by the first pack), so report it against the outstanding request.
     if (this->waiting_) {
       ESP_LOGW(TAG, "Request 0x%02X to 0x%02X failed: 0x%02X answered with error 0x%02X (%s)", this->waiting_function_,
                this->waiting_address_, address, return_code, return_code_to_string(return_code));

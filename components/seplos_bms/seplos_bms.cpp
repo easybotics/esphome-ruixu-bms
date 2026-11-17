@@ -52,7 +52,8 @@ void SeplosBms::on_seplos_modbus_data(const std::vector<uint8_t> &data) {
   }
 
   char hex_buf[format_hex_pretty_size(MAX_HEX_DUMP_BYTES)];
-  ESP_LOGW(TAG, "Unhandled data received (data_len: 0x%02X): %s", data[5], format_hex_pretty_to(hex_buf, data, '.'));
+  ESP_LOGW(TAG, "Unhandled data received (data_len: 0x%02X): %s", data.size() > 5 ? data[5] : 0,
+           format_hex_pretty_to(hex_buf, data, '.'));
 }
 
 void SeplosBms::on_telemetry_data_(const std::vector<uint8_t> &data) {
@@ -187,8 +188,9 @@ void SeplosBms::on_telemetry_data_(const std::vector<uint8_t> &data) {
 
 void SeplosBms::dump_config() {
   ESP_LOGCONFIG(TAG, "SeplosBms:");
-  ESP_LOGCONFIG(TAG, "  Telemetry layout: %s",
-                this->telemetry_layout_ == TELEMETRY_LAYOUT_RUIXU ? "Ruixu" : "Seplos");
+  ESP_LOGCONFIG(
+      TAG, "  Telemetry layout: %s",
+      this->telemetry_layout_ == TELEMETRY_LAYOUT_RUIXU ? LOG_STR_LITERAL("Ruixu") : LOG_STR_LITERAL("Seplos"));
   ESP_LOGCONFIG(TAG, "  Alarm/status (0x44) requests: %s", YESNO(this->alarm_data_wanted_()));
   LOG_BINARY_SENSOR("", "Charging MOSFET", this->charging_mosfet_binary_sensor_);
   LOG_BINARY_SENSOR("", "Discharging MOSFET", this->discharging_mosfet_binary_sensor_);
@@ -452,9 +454,9 @@ bool SeplosBms::on_ruixu_alarm_data_(const std::vector<uint8_t> &data) {
     snprintf(buf, sizeof(buf), "Pack voltage %s", state_name(voltage_state));
     add(buf);
   }
-  static const char *const STATUS1[8] = {"Pack overvoltage",       "Cell undervoltage",     "Charge overcurrent",
-                                         nullptr,                  "Discharge overcurrent", "Discharge overtemperature",
-                                         "Charge overtemperature", "Pack undervoltage"};
+  static const char *const STATUS1[8] = {
+      "Pack overvoltage",      "Cell undervoltage",         "Charge overcurrent",     nullptr,
+      "Discharge overcurrent", "Discharge overtemperature", "Charge overtemperature", "Pack undervoltage"};
   for (uint8_t bit = 0; bit < 8; bit++) {
     if ((s1 & (1 << bit)) && STATUS1[bit] != nullptr)
       add(STATUS1[bit]);

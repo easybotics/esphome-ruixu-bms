@@ -56,13 +56,26 @@ class TestSeplosBmsSensorLists:
 class TestSeplosBmsBinarySensorConstants:
     def test_binary_sensor_defs_dict(self):
         assert binary_sensor.CONF_ONLINE_STATUS in binary_sensor.BINARY_SENSOR_DEFS
-        assert len(binary_sensor.BINARY_SENSOR_DEFS) == 1
+        # Ruixu 0x44 alarm/status entities
+        for key in (
+            binary_sensor.CONF_CHARGING_MOSFET,
+            binary_sensor.CONF_DISCHARGING_MOSFET,
+            binary_sensor.CONF_PRECHARGE_MOSFET,
+            binary_sensor.CONF_CHARGING,
+            binary_sensor.CONF_DISCHARGING,
+            binary_sensor.CONF_HEATING,
+            binary_sensor.CONF_FULLY_CHARGED,
+            binary_sensor.CONF_ALARM,
+        ):
+            assert key in binary_sensor.BINARY_SENSOR_DEFS
+        assert len(binary_sensor.BINARY_SENSOR_DEFS) == 9
 
 
 class TestSeplosBmsTextSensorConstants:
     def test_text_sensors_list(self):
         assert text_sensor.CONF_ERRORS in text_sensor.TEXT_SENSORS
-        assert len(text_sensor.TEXT_SENSORS) == 1
+        assert text_sensor.CONF_STATUS_BYTES in text_sensor.TEXT_SENSORS
+        assert len(text_sensor.TEXT_SENSORS) == 2
 
 
 class TestSeplosBmsBleSensorLists:

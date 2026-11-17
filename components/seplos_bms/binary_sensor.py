@@ -33,8 +33,14 @@ BINARY_SENSOR_DEFS = {
         "device_class": DEVICE_CLASS_CONNECTIVITY,
         "entity_category": ENTITY_CATEGORY_DIAGNOSTIC,
     },
-    CONF_CHARGING_MOSFET: {"device_class": DEVICE_CLASS_POWER, "icon": "mdi:battery-arrow-up"},
-    CONF_DISCHARGING_MOSFET: {"device_class": DEVICE_CLASS_POWER, "icon": "mdi:battery-arrow-down"},
+    CONF_CHARGING_MOSFET: {
+        "device_class": DEVICE_CLASS_POWER,
+        "icon": "mdi:battery-arrow-up",
+    },
+    CONF_DISCHARGING_MOSFET: {
+        "device_class": DEVICE_CLASS_POWER,
+        "icon": "mdi:battery-arrow-down",
+    },
     CONF_PRECHARGE_MOSFET: {
         "device_class": DEVICE_CLASS_POWER,
         "entity_category": ENTITY_CATEGORY_DIAGNOSTIC,

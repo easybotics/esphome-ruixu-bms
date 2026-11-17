@@ -12,7 +12,7 @@ Example YAML:
 
 * ESPHome 2026.1.0 or newer (the upstream component's minimum).
 * Pin the component to a release tag in your YAML, for example
-  `github://easybotics/esphome-ruixu-bms@ruixu-v2.2.0`, so a later change here can't alter your device on the next build.
+  `github://easybotics/esphome-ruixu-bms@ruixu-v2.2.1`, so a later change here can't alter your device on the next build.
 
 ## How the Ruixu frame differs from Seplos
 

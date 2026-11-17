@@ -1,19 +1,19 @@
 substitutions:
   name: bms
-  friendly_name: bms # this will be appended before the entitiy names as per newer ESPhome standard - leave "bms" to work with my dashboards by default
+  friendly_name: bms  # this will be appended before the entitiy names as per newer ESPhome standard - leave "bms" to work with my dashboards by default
   batt_0: "batt 0"
   device_description: "Monitor and control a Ruixu BMS via RS485 (Modbus) with M5Stack Atomic ESP32 S3 lite"
-  tx_pin: GPIO2   # M5stack Atom S3 + Atomic RS485 base = GPIO6 | Isolated RS485 Grove module = GPIO2
-  rx_pin: GPIO1   # M5stack Atom S3 + Atomic RS485 base = GPIO5 | Isolated RS485 Grove module = GPIO1
-  external_components_source: github://easybotics/esphome-ruixu-bms@ruixu-v2.2.0
+  tx_pin: GPIO2  # M5stack Atom S3 + Atomic RS485 base = GPIO6 | Isolated RS485 Grove module = GPIO2
+  rx_pin: GPIO1  # M5stack Atom S3 + Atomic RS485 base = GPIO5 | Isolated RS485 Grove module = GPIO1
+  external_components_source: github://easybotics/esphome-ruixu-bms@ruixu-v2.2.1
 
 esphome:
   name: ${name}
   comment: ${device_description}
-  min_version: 2026.1.0 # the component needs ESPHome 2026.1.0 or newer
+  min_version: 2026.1.0  # the component needs ESPHome 2026.1.0 or newer
   project:
     name: "easybotics.esphome-ruixu-bms"
-    version: 2.2.0
+    version: 2.2.1
 
 external_components:
   - source: ${external_components_source}
@@ -25,35 +25,35 @@ preferences:
   flash_write_interval: 15min
 
 esp32:
-  board: esp32-s3-devkitc-1 # m5stack-atoms3 #hardware is M5stack Atom S3 Lite with Atomic RS485 base - but the closest define with this version of platformio is the esp32-s3-devkitc-1
+  board: esp32-s3-devkitc-1  # m5stack-atoms3 #hardware is M5stack Atom S3 Lite with Atomic RS485 base - but the closest define with this version of platformio is the esp32-s3-devkitc-1
   variant: esp32s3
   framework:
     type: arduino
-    
+
 # Enable logging
 logger:
-  #level: VERBOSE
-  baud_rate: 921600 # faster logging 
+  # level: VERBOSE
+  baud_rate: 921600  # faster logging
 
 # Enable Home Assistant API
 api:
-  encryption:
-    key: ""
+  # encryption:
+  #   key: !secret api_encryption_key  # recommended; generate one in the ESPHome dashboard
 
 ota:
   - platform: esphome
-    password: ""
+    # password: !secret ota_password
 
 wifi:
   ssid: !secret wifi_ssid
   password: !secret wifi_password
 
   # Enable fallback hotspot (captive portal) in case wifi connection fails
-  #ap:
+  # ap:
   #  ssid: "Battery Fallback Hotspot"
   #  password: ""
 
-#captive_portal:
+# captive_portal:
 
 time:
   - platform: homeassistant
@@ -108,7 +108,7 @@ uart:
 #      sequence:
 #        - lambda: |-
             # UARTDebug::log_string(direction, bytes);
-            # UARTDebug::log_hex(direction, bytes, ' '); 
+            # UARTDebug::log_hex(direction, bytes, ' ');
 
 
 seplos_modbus:
@@ -116,21 +116,21 @@ seplos_modbus:
   uart_id: uart_0
   rx_timeout: 150ms
 
-# RS485 transceiver should only be connected to the master BMS OUT port - the same one going to the inverter - it will not work correctly on any other battery or port!! 
+# RS485 transceiver should only be connected to the master BMS OUT port - the same one going to the inverter - it will not work correctly on any other battery or port!!
 # the master battery CAN lines (middle pair) go to the inverter - the last pair (brown) go to the RS485 transceiver
-# it will NOT work correclty on the extra port on the last slave battery. 
+# it will NOT work correclty on the extra port on the last slave battery.
 # the Ruixu BMS seems sensitive to when the data is sent - if the logs show only 1 battery data being received try adjusting the interval or just restarting the ESP32
 # protocol_version 0x21 selects the Ruixu frame layout (telemetry_layout: auto).
 # A pack that stops answering shows as offline, and its values become unknown after 5 missed polls.
 seplos_bms:
-  - id: bms0 
-    address: 0x00 # master BMS
-    protocol_version: 0x21 # Known protocol versions: 0x20 (Seplos), 0x26 (Boqiang), 0x21 (Ruixu)
+  - id: bms0
+    address: 0x00  # master BMS
+    protocol_version: 0x21  # Known protocol versions: 0x20 (Seplos), 0x26 (Boqiang), 0x21 (Ruixu)
     seplos_modbus_id: modbus0
-    update_interval: 5s # it seems that offsetting these intervals helps with making sure all battery requests dont interfere with eachother if using multiple. 
+    update_interval: 5s  # it seems that offsetting these intervals helps with making sure all battery requests dont interfere with eachother if using multiple.
 
 binary_sensor:
-  - platform: status # exposes the node state in HA
+  - platform: status  # exposes the node state in HA
     name: "Node Status"
     id: system_status
   - platform: seplos_bms
@@ -167,7 +167,7 @@ text_sensor:
   - platform: debug
     reset_reason:
       name: "ESP reset reason"
-  - platform: wifi_info # exposes the node IP in HA
+  - platform: wifi_info  # exposes the node IP in HA
     ip_address:
       name: ESP IP Address
       id: ip_address
@@ -183,9 +183,9 @@ sensor:
   # these sensors calcualte kWh (energy) and are very useful - the separate IN / OUT sensors are necessary for the HA default power monitoring and the https://github.com/slipx06/sunsynk-power-flow-card which is highly recommended
   - { power_id: batt_0_power_net, platform: total_daily_energy, method: left, accuracy_decimals: 2, unit_of_measurement: 'kWh', id: batt_0_energy_net, name: "${batt_0} daily energy net"}
   - { power_id: batt_0_power_in, platform: total_daily_energy, method: left, accuracy_decimals: 2, unit_of_measurement: 'kWh', id: batt_0_energy_in, name: "${batt_0} daily energy in"}
-  - { power_id: batt_0_power_out, platform: total_daily_energy, method: left, accuracy_decimals: 2, unit_of_measurement: 'kWh', id: batt_0_energy_out, name: "${batt_0} daily energy out"}      
+  - { power_id: batt_0_power_out, platform: total_daily_energy, method: left, accuracy_decimals: 2, unit_of_measurement: 'kWh', id: batt_0_energy_out, name: "${batt_0} daily energy out"}
 
-  - platform: seplos_bms #################################### batt_0 ###################################
+  - platform: seplos_bms  #################################### batt_0 ###################################
     seplos_bms_id: bms0
     min_cell_voltage:
       name: "${batt_0} voltage cell min"
@@ -258,22 +258,22 @@ sensor:
     power:
       name: "${batt_0} power net"
       id: batt_0_power_net
-      filters: 
-        - multiply: 0.001 # Multiplication factor from W to kW is 0.001
+      filters:
+        - multiply: 0.001  # Multiplication factor from W to kW is 0.001
       unit_of_measurement: 'kW'
       accuracy_decimals: 3
     charging_power:
       name: "${batt_0} power in"
       id: batt_0_power_in
-      filters: 
-        - multiply: 0.001 # Multiplication factor from W to kW is 0.001
+      filters:
+        - multiply: 0.001  # Multiplication factor from W to kW is 0.001
       unit_of_measurement: 'kW'
       accuracy_decimals: 3
     discharging_power:
       name: "${batt_0} power out"
       id: batt_0_power_out
-      filters: 
-        - multiply: 0.001 # Multiplication factor from W to kW is 0.001
+      filters:
+        - multiply: 0.001  # Multiplication factor from W to kW is 0.001
       unit_of_measurement: 'kW'
       accuracy_decimals: 3
     residual_capacity:
@@ -288,7 +288,7 @@ sensor:
       name: "${batt_0} state of health"
 
 
-      # Ruixu Battery Testing 
+      # Ruixu Battery Testing
       # First request in Strings:          \xEF\x00\xFB\x00\xFF\x05\x16\
       # 2                                  \xEF\x00\x83\x04\x00e\x00\x01\xFF\x13\x16    e = 0x65
       # 3                                  \xEF\x00\x83\x04\x00\xB5\x00\x01\xFE\xC3\x16
@@ -311,7 +311,7 @@ sensor:
 
       # hex 4                              7E 32 31 30 30 34 36 34 32 45 30 30 32 30 30 46 44 33 36 0D
       # hex 4 response                     7e 32 31 30 30 34 36 30 30 38 30 38 30 30 30 31 30 30 43 45 32 30 43 45 31 30 43 44 46 30 43 45 32 30 43 45 30 30 43 45 33 30 43 44 46 30 43 45 31 30 43 44 46 30 43 45 31 30 43 45 31 30 43 45 30 30 43 45 30 30 43 45 31 30 43 45 30 30 43 45 30 30 37 30 42 43 43 30 42 44 31 30 42 43 45 30 42 43 46 30 42 44 42 30 42 43 43 30 42 44 37 30 30 30 30 31 34 39 35 34 38 41 37 30 34 37 41 41 38 30 30 30 31 33 42 36 34 30 30 30 30 45 30 44 33 5c 72
-      # this is the cell voltage I belive                                                     30 43 45 32 = 3.298v    30 43 44 46 = 3.295v                                                                                                                                        30 43 45 30 = 3.296v = last voltage                        
+      # this is the cell voltage I belive                                                     30 43 45 32 = 3.298v    30 43 44 46 = 3.295v                                                                                                                                        30 43 45 30 = 3.296v = last voltage
 
       # hex 5                              7E 32 31 30 30 34 36 34 34 45 30 30 32 30 30 46 44 33 34 0D
       # hex 5 response                     7e 32 31 30 30 34 36 30 30 32 30 34 41 30 30 31 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 37 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 38 30 30 30 36 30 30 30 30 30 30 30 30 30 30 30 30 45 46 41 36 5c 72
@@ -391,7 +391,7 @@ sensor:
 # 08 = Dischard current
 # 00
 # 06 = Status #2 flag bits DFET and CFET on
-# 000000000000EFA6\r 
+# 000000000000EFA6\r
 
 # <<< 7E 32 31 30 30 34 36 30 30 32 30 34 41 30 30 31 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 37 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 30 38 30 30 30 36 30 30 30 30 30 30 30 30 30 30 30 30 45 46 41 36 0D
 
@@ -424,8 +424,8 @@ sensor:
 # >>> 7E 32 31 30 30 34 36 34 44 30 30 30 30 46 44 39 42 0D
 # <<< "~21004600200E07E8090D070100FAB3\r"
 # <<< 7E 32 31 30 30 34 36 30 30 32 30 30 45 30 37 45 38 30 39 30 44 30 37 30 31 30 30 46 41 42 33 0D
-                            
+
 
 # error example:                     EF 00 83 04 00 B5 00 01 FF 13 16      -the 13 is a miss type - so the response is some error I believe
 # error response:                    EF 00 83 01 02 FF 7A 16
-      
+
