@@ -8,7 +8,7 @@ substitutions:
   device_description: "Monitor and control a Ruixu BMS via RS485 (Modbus) with M5Stack Atomic ESP32 S3 lite"
   tx_pin: GPIO2   # M5stack Atom S3 + Atomic RS485 base = GPIO6 | Isolated RS485 Grove module = GPIO2
   rx_pin: GPIO1   # M5stack Atom S3 + Atomic RS485 base = GPIO5 | Isolated RS485 Grove module = GPIO1
-  external_components_source: github://easybotics/esphome-ruixu-bms@ruixu-v2.1.0
+  external_components_source: github://easybotics/esphome-ruixu-bms@ruixu-v2.2.0-beta.1
 
 esphome:
   name: ${name}
@@ -17,7 +17,7 @@ esphome:
   min_version: 2026.1.0 # the component needs ESPHome 2026.1.0 or newer
   project:
     name: "easybotics.esphome-ruixu-bms"
-    version: 2.1.0
+    version: 2.2.0-beta.1
 
 external_components:
   - source: ${external_components_source}
@@ -164,23 +164,111 @@ binary_sensor:
     seplos_bms_id: bms0
     online_status:
       name: "${batt_0} online"
+    charging_mosfet:
+      name: "${batt_0} charge MOSFET"
+    discharging_mosfet:
+      name: "${batt_0} discharge MOSFET"
+    precharge_mosfet:
+      name: "${batt_0} pre-charge MOSFET"
+    charging:
+      name: "${batt_0} charging"
+    discharging:
+      name: "${batt_0} discharging"
+    heating:
+      name: "${batt_0} heating"
+    fully_charged:
+      name: "${batt_0} fully charged"
+    alarm:
+      name: "${batt_0} alarm"
   - platform: seplos_bms
     seplos_bms_id: bms1
     online_status:
       name: "${batt_1} online"
+    charging_mosfet:
+      name: "${batt_1} charge MOSFET"
+    discharging_mosfet:
+      name: "${batt_1} discharge MOSFET"
+    precharge_mosfet:
+      name: "${batt_1} pre-charge MOSFET"
+    charging:
+      name: "${batt_1} charging"
+    discharging:
+      name: "${batt_1} discharging"
+    heating:
+      name: "${batt_1} heating"
+    fully_charged:
+      name: "${batt_1} fully charged"
+    alarm:
+      name: "${batt_1} alarm"
   - platform: seplos_bms
     seplos_bms_id: bms2
     online_status:
       name: "${batt_2} online"
+    charging_mosfet:
+      name: "${batt_2} charge MOSFET"
+    discharging_mosfet:
+      name: "${batt_2} discharge MOSFET"
+    precharge_mosfet:
+      name: "${batt_2} pre-charge MOSFET"
+    charging:
+      name: "${batt_2} charging"
+    discharging:
+      name: "${batt_2} discharging"
+    heating:
+      name: "${batt_2} heating"
+    fully_charged:
+      name: "${batt_2} fully charged"
+    alarm:
+      name: "${batt_2} alarm"
   - platform: seplos_bms
     seplos_bms_id: bms3
     online_status:
       name: "${batt_3} online"
+    charging_mosfet:
+      name: "${batt_3} charge MOSFET"
+    discharging_mosfet:
+      name: "${batt_3} discharge MOSFET"
+    precharge_mosfet:
+      name: "${batt_3} pre-charge MOSFET"
+    charging:
+      name: "${batt_3} charging"
+    discharging:
+      name: "${batt_3} discharging"
+    heating:
+      name: "${batt_3} heating"
+    fully_charged:
+      name: "${batt_3} fully charged"
+    alarm:
+      name: "${batt_3} alarm"
 
 debug:
   update_interval: 60s
 
 text_sensor:
+  - platform: seplos_bms
+    seplos_bms_id: bms0
+    errors:
+      name: "${batt_0} alarms"
+    status_bytes:
+      name: "${batt_0} status bytes"
+  - platform: seplos_bms
+    seplos_bms_id: bms1
+    errors:
+      name: "${batt_1} alarms"
+    status_bytes:
+      name: "${batt_1} status bytes"
+  - platform: seplos_bms
+    seplos_bms_id: bms2
+    errors:
+      name: "${batt_2} alarms"
+    status_bytes:
+      name: "${batt_2} status bytes"
+  - platform: seplos_bms
+    seplos_bms_id: bms3
+    errors:
+      name: "${batt_3} alarms"
+    status_bytes:
+      name: "${batt_3} status bytes"
   - platform: debug
     reset_reason:
       name: "ESP reset reason"

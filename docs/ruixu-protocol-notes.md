@@ -5,7 +5,20 @@ Research notes compiled in November 2026 from public protocol documents and capt
 **What this fork does with it (2.1.0):**
 - Requests go out one at a time (`response_timeout` 1000 ms, `request_gap` 100 ms on `seplos_modbus`).
 - Error replies (non-zero RTN) are logged with their meaning against the request that was outstanding (section 1).
-- 0x44, 0x51 and the EF binary protocol are documented below but not decoded by the component yet.
+- 0x51 and the EF binary protocol are documented below but not decoded by the component.
+
+**0x44 alarm/status (2.2.0 beta):** decoded into MOSFET, charging/discharging/heating/fully-charged and alarm
+entities, plus `status_bytes` (raw) for confirming the bits. Confirmed so far on 3 packs:
+
+| Status byte (after P) | Idle, 0 A (2024 capture) | Discharging, about 29 A (2026-11-17) | Reading |
+|---|---|---|---|
+| Status 1 | 00 | 00 | No protection active |
+| Status 2 | 06 | 06 | Charge and discharge MOSFETs on (bits 1, 2) |
+| Status 3 | 00 | **40** | Bit 6 = discharge current: confirmed |
+| Status 4-5, 3 extra | 00 | 00 | |
+
+Still to confirm from the recorded `status_bytes` history: bit 7 of status 3 while charging, bit 3 at full charge,
+bit 5 (heater, unlikely in a warm climate), and the status 1 / cell bits during a real protection event.
 
 **Field measurement behind the queue (2026-11-17, 3 packs, 141 s of logs):**
 - 81 requests gave 75 good replies.
