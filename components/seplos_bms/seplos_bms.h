@@ -8,6 +8,13 @@
 
 namespace esphome::seplos_bms {
 
+// Byte layout of the 0x42 telemetry response. Ruixu packs (protocol version 0x21)
+// omit the command group byte and send SOC/SOH as single whole-percent bytes.
+enum TelemetryLayout : uint8_t {
+  TELEMETRY_LAYOUT_SEPLOS = 0,
+  TELEMETRY_LAYOUT_RUIXU = 1,
+};
+
 class SeplosBms : public PollingComponent, public seplos_modbus::SeplosModbusDevice {
  public:
   void set_online_status_binary_sensor(binary_sensor::BinarySensor *online_status_binary_sensor) {
@@ -70,6 +77,7 @@ class SeplosBms : public PollingComponent, public seplos_modbus::SeplosModbusDev
   void set_errors_text_sensor(text_sensor::TextSensor *errors_text_sensor) { errors_text_sensor_ = errors_text_sensor; }
 
   void set_override_cell_count(uint8_t override_cell_count) { this->override_cell_count_ = override_cell_count; }
+  void set_telemetry_layout(TelemetryLayout telemetry_layout) { this->telemetry_layout_ = telemetry_layout; }
 
   void on_seplos_modbus_data(const std::vector<uint8_t> &data) override;
 
@@ -110,12 +118,14 @@ class SeplosBms : public PollingComponent, public seplos_modbus::SeplosModbusDev
   } temperatures_[6];
 
   uint8_t override_cell_count_{0};
+  TelemetryLayout telemetry_layout_{TELEMETRY_LAYOUT_SEPLOS};
   uint8_t no_response_count_{0};
 
   void publish_state_(binary_sensor::BinarySensor *binary_sensor, const bool &state);
   void publish_state_(sensor::Sensor *sensor, float value);
   void publish_state_(text_sensor::TextSensor *text_sensor, const std::string &state);
   void on_telemetry_data_(const std::vector<uint8_t> &data);
+  void on_ruixu_telemetry_data_(const std::vector<uint8_t> &data);
   void reset_online_status_tracker_();
   void track_online_status_();
   void publish_device_unavailable_();

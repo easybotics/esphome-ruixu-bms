@@ -93,7 +93,9 @@ bool SeplosModbus::parse_seplos_modbus_byte_(uint8_t byte) {
   // Start of frame
   if (at == 0) {
     if (raw[0] != 0x7E) {
-      // ESP_LOGW(TAG, "Invalid header: 0x%02X", raw[0]); // hide error
+      // Ruixu packs share the RS485 pair with their own binary 0xEF..0x16 frames,
+      // so stray bytes are normal there: log them at the most verbose level only.
+      ESP_LOGVV(TAG, "Invalid header: 0x%02X", raw[0]);
 
       // return false to reset buffer
       return false;

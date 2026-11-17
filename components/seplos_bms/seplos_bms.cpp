@@ -31,7 +31,13 @@ void SeplosBms::on_seplos_modbus_data(const std::vector<uint8_t> &data) {
   // 14             77           142 (0x8E)
   // 15             79           146 (0x92)
   // 16             81           150 (0x96)
-  if (data.size() >= 44 && data[8] >= 8 && data[8] <= 16) {
+  if (this->telemetry_layout_ == TELEMETRY_LAYOUT_RUIXU) {
+    // Ruixu has no command group byte, so the cell count is byte 7 rather than 8
+    if (data.size() >= 44 && data[7] >= 8 && data[7] <= 16) {
+      this->on_ruixu_telemetry_data_(data);
+      return;
+    }
+  } else if (data.size() >= 44 && data[8] >= 8 && data[8] <= 16) {
     this->on_telemetry_data_(data);
     return;
   }
@@ -63,9 +69,9 @@ void SeplosBms::on_telemetry_data_(const std::vector<uint8_t> &data) {
   //   5    0x96             Data length           LENID      150 / 2 = 75
   //   6      0x00           Data flag
   //   7      0x01           Command group
-  ESP_LOGV(TAG, "Command group: %d", data[6]); // was 7
+  ESP_LOGV(TAG, "Command group: %d", data[7]);
   //   8      0x10           Number of cells                  16
-  uint8_t cells = (this->override_cell_count_) ? this->override_cell_count_ : data[7]; // was 8
+  uint8_t cells = (this->override_cell_count_) ? this->override_cell_count_ : data[8];
 
   ESP_LOGV(TAG, "Number of cells: %d", cells);
   //   9      0x0C 0xD7      Cell voltage 1                   3287 * 0.001f = 3.287         V
@@ -78,7 +84,7 @@ void SeplosBms::on_telemetry_data_(const std::vector<uint8_t> &data) {
   uint8_t min_voltage_cell = 0;
   uint8_t max_voltage_cell = 0;
   for (uint8_t i = 0; i < std::min((uint8_t) 16, cells); i++) {
-    float cell_voltage = (float) seplos_get_16bit(8 + (i * 2)) * 0.001f;
+    float cell_voltage = (float) seplos_get_16bit(9 + (i * 2)) * 0.001f;
     average_cell_voltage = average_cell_voltage + cell_voltage;
     if (cell_voltage < min_cell_voltage) {
       min_cell_voltage = cell_voltage;
@@ -99,7 +105,7 @@ void SeplosBms::on_telemetry_data_(const std::vector<uint8_t> &data) {
   this->publish_state_(this->delta_cell_voltage_sensor_, max_cell_voltage - min_cell_voltage);
   this->publish_state_(this->average_cell_voltage_sensor_, average_cell_voltage);
 
-  uint8_t offset = 8 + (cells * 2);
+  uint8_t offset = 9 + (cells * 2);
 
   //   41     0x06           Number of temperatures           6                             V
   uint8_t temperature_sensors = data[offset];
@@ -118,7 +124,7 @@ void SeplosBms::on_telemetry_data_(const std::vector<uint8_t> &data) {
   offset = offset + 1 + (temperature_sensors * 2);
 
   //   54     0xFD 0x5C      Charge/discharge current         signed int?                   A
-  float current = (float) ((int16_t) seplos_get_16bit(offset)) * 0.1f;
+  float current = (float) ((int16_t) seplos_get_16bit(offset)) * 0.01f;
   this->publish_state_(this->current_sensor_, current);
 
   //   56     0x14 0xA0      Total battery voltage            5280 * 0.01f = 52.80          V
@@ -137,14 +143,25 @@ void SeplosBms::on_telemetry_data_(const std::vector<uint8_t> &data) {
   //   61     0x42 0x68      Battery capacity                 17000 * 0.01f = 170.00        Ah
   this->publish_state_(this->battery_capacity_sensor_, (float) seplos_get_16bit(offset + 7) * 0.01f);
 
+  //   63     0x03 0x13      Stage of charge                  787 * 0.1f = 78.7             %
+  this->publish_state_(this->state_of_charge_sensor_, (float) seplos_get_16bit(offset + 9) * 0.1f);
+
+  //   65     0x46 0x50      Rated capacity                   18000 * 0.01f = 180.00        Ah
+  this->publish_state_(this->rated_capacity_sensor_, (float) seplos_get_16bit(offset + 11) * 0.01f);
+
+  if (data.size() < offset + 13 + 2) {
+    return;
+  }
+
   //   67     0x00 0x46      Number of cycles                 70
-  this->publish_state_(this->charging_cycles_sensor_, (float) seplos_get_16bit(offset + 9));
+  this->publish_state_(this->charging_cycles_sensor_, (float) seplos_get_16bit(offset + 13));
 
-    //   63     0x03 0x13      Stage of charge                         %
-  this->publish_state_(this->state_of_charge_sensor_, (float) (uint8_t(data[offset + 11])));
+  if (data.size() < offset + 15 + 2) {
+    return;
+  }
 
-  //   69     0x03 0xE8      State of health                           %
-  this->publish_state_(this->state_of_health_sensor_, (float) (uint8_t(data[offset + 12])));
+  //   69     0x03 0xE8      State of health                  1000 * 0.1f = 100.0           %
+  this->publish_state_(this->state_of_health_sensor_, (float) seplos_get_16bit(offset + 15) * 0.1f);
 
   if (data.size() < offset + 17 + 2) {
     return;
@@ -161,6 +178,8 @@ void SeplosBms::on_telemetry_data_(const std::vector<uint8_t> &data) {
 
 void SeplosBms::dump_config() {
   ESP_LOGCONFIG(TAG, "SeplosBms:");
+  ESP_LOGCONFIG(TAG, "  Telemetry layout: %s",
+                this->telemetry_layout_ == TELEMETRY_LAYOUT_RUIXU ? "Ruixu" : "Seplos");
   LOG_SENSOR("", "Minimum Cell Voltage", this->min_cell_voltage_sensor_);
   LOG_SENSOR("", "Maximum Cell Voltage", this->max_cell_voltage_sensor_);
   LOG_SENSOR("", "Minimum Voltage Cell", this->min_voltage_cell_sensor_);
@@ -206,6 +225,105 @@ void SeplosBms::dump_config() {
 float SeplosBms::get_setup_priority() const {
   // After UART bus
   return setup_priority::BUS - 1.0f;
+}
+
+// Ruixu packs (e.g. 314 Ah 16S) answer the 0x42 request with a Pylontech-style frame that
+// differs from Seplos: no command group byte, current in 0.1 A, no rated capacity, and
+// SOC/SOH as single whole-percent bytes. Captured from a Ruixu pack (address 0x00):
+//
+// ~21004600808000 10 0CE0...0CDE 07 0BAE0BB20BAF0BB00BC60BB80BC0 0000 1491 48A7 04 7AA8 0001 3B 64 0000 E056
+//
+// Byte   Content                       Example     Decoded
+//   0    Protocol version              0x21
+//   1    Device address                0x00
+//   2    Device type (CID1)            0x46
+//   3    Return code (CID2)            0x00        0x00: Normal
+//   4    Length checksum + length      0x80 0x80   128 ASCII chars = 64 data bytes
+//   6    Data flag                     0x00
+//   7    Number of cells               0x10        16
+//   8    Cell voltage 1..n             0x0C 0xE0   3296 * 0.001 = 3.296 V
+//   o    Number of temperatures        0x07        7 (the first 6 are published)
+//   o+1  Temperature 1..n              0x0B 0xAE   (2990 - 2731) * 0.1 = 25.9 C
+//   t    Current                       0x00 0x00   signed, * 0.1 A (charging is positive)
+//   t+2  Total voltage                 0x14 0x91   5265 * 0.01 = 52.65 V
+//   t+4  Residual capacity             0x48 0xA7   18599 * 0.01 = 185.99 Ah
+//   t+6  Custom number                 0x04
+//   t+7  Battery capacity              0x7A 0xA8   31400 * 0.01 = 314.00 Ah
+//   t+9  Number of cycles              0x00 0x01   1
+//   t+11 State of charge               0x3B        59 %
+//   t+12 State of health               0x64        100 %
+//   t+13 Reserved                      0x00 0x00
+void SeplosBms::on_ruixu_telemetry_data_(const std::vector<uint8_t> &data) {
+  auto get_16bit = [&](size_t i) -> uint16_t { return (uint16_t(data[i + 0]) << 8) | (uint16_t(data[i + 1]) << 0); };
+
+  ESP_LOGI(TAG, "Ruixu telemetry frame (%zu bytes) received", data.size());
+  log_hex_chunked(TAG, data.data(), data.size());
+
+  uint8_t cells = (this->override_cell_count_) ? this->override_cell_count_ : data[7];
+  size_t offset = 8 + (cells * 2);
+  if (data.size() < offset + 1) {
+    ESP_LOGW(TAG, "Ruixu telemetry frame too short (%zu bytes) for %u cells", data.size(), cells);
+    return;
+  }
+  uint8_t temperature_sensors = data[offset];
+  size_t tail = offset + 1 + (temperature_sensors * 2);
+  if (data.size() < tail + 13) {
+    ESP_LOGW(TAG, "Ruixu telemetry frame too short (%zu bytes) for %u cells and %u temperatures", data.size(), cells,
+             temperature_sensors);
+    return;
+  }
+
+  float min_cell_voltage = 100.0f;
+  float max_cell_voltage = -100.0f;
+  float average_cell_voltage = 0.0f;
+  uint8_t min_voltage_cell = 0;
+  uint8_t max_voltage_cell = 0;
+  uint8_t published_cells = std::min((uint8_t) 16, cells);
+  for (uint8_t i = 0; i < published_cells; i++) {
+    float cell_voltage = (float) get_16bit(8 + (i * 2)) * 0.001f;
+    average_cell_voltage += cell_voltage;
+    if (cell_voltage < min_cell_voltage) {
+      min_cell_voltage = cell_voltage;
+      min_voltage_cell = i + 1;
+    }
+    if (cell_voltage > max_cell_voltage) {
+      max_cell_voltage = cell_voltage;
+      max_voltage_cell = i + 1;
+    }
+    this->publish_state_(this->cells_[i].cell_voltage_sensor_, cell_voltage);
+  }
+  if (published_cells > 0) {
+    average_cell_voltage = average_cell_voltage / published_cells;
+    this->publish_state_(this->min_cell_voltage_sensor_, min_cell_voltage);
+    this->publish_state_(this->max_cell_voltage_sensor_, max_cell_voltage);
+    this->publish_state_(this->max_voltage_cell_sensor_, (float) max_voltage_cell);
+    this->publish_state_(this->min_voltage_cell_sensor_, (float) min_voltage_cell);
+    this->publish_state_(this->delta_cell_voltage_sensor_, max_cell_voltage - min_cell_voltage);
+    this->publish_state_(this->average_cell_voltage_sensor_, average_cell_voltage);
+  }
+
+  ESP_LOGV(TAG, "Number of temperature sensors: %d", temperature_sensors);
+  for (uint8_t i = 0; i < std::min((uint8_t) 6, temperature_sensors); i++) {
+    float raw_temperature = (float) get_16bit(offset + 1 + (i * 2));
+    this->publish_state_(this->temperatures_[i].temperature_sensor_, (raw_temperature - 2731.0f) * 0.1f);
+  }
+
+  float current = (float) ((int16_t) get_16bit(tail)) * 0.1f;
+  this->publish_state_(this->current_sensor_, current);
+
+  float total_voltage = (float) get_16bit(tail + 2) * 0.01f;
+  this->publish_state_(this->total_voltage_sensor_, total_voltage);
+
+  float power = total_voltage * current;
+  this->publish_state_(this->power_sensor_, power);
+  this->publish_state_(this->charging_power_sensor_, std::max(0.0f, power));
+  this->publish_state_(this->discharging_power_sensor_, std::abs(std::min(0.0f, power)));
+
+  this->publish_state_(this->residual_capacity_sensor_, (float) get_16bit(tail + 4) * 0.01f);
+  this->publish_state_(this->battery_capacity_sensor_, (float) get_16bit(tail + 7) * 0.01f);
+  this->publish_state_(this->charging_cycles_sensor_, (float) get_16bit(tail + 9));
+  this->publish_state_(this->state_of_charge_sensor_, (float) data[tail + 11]);
+  this->publish_state_(this->state_of_health_sensor_, (float) data[tail + 12]);
 }
 
 void SeplosBms::update() {
